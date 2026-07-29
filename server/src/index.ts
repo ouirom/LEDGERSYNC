@@ -11,6 +11,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { initSocketIO } from './sockets/socketServer';
+import { authenticate } from './middleware/auth';
 import authRoutes from './modules/auth/auth.routes';
 import tenantRoutes from './modules/tenants/tenant.routes';
 import entrepriseRoutes from './modules/tenants/entreprise.routes';
@@ -44,6 +45,16 @@ const limiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Limite dédiée, plus stricte, sur les tentatives de connexion (défense en profondeur
+// en complément du verrouillage de compte applicatif dans auth.routes.ts)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Trop de tentatives de connexion. Réessayez dans quelques minutes.' },
+});
+
 // ── Middlewares ─────────────────────────────────────────────
 app.use(helmet({ crossOriginEmbedderPolicy: false }));
 app.use(cors({
@@ -58,7 +69,10 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(limiter);
 
 // ── Static Files (uploads) ──────────────────────────────────
-app.use('/uploads', express.static(path.resolve(uploadDir)));
+// Authentification requise : ces fichiers (PV officiels, relevés importés)
+// contiennent des données financières sensibles et ne doivent jamais être
+// servis à un tiers non authentifié, même avec une URL/nom de fichier deviné.
+app.use('/uploads', authenticate, express.static(path.resolve(uploadDir)));
 
 // ── Health Check ────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -66,6 +80,7 @@ app.get('/api/health', (_req, res) => {
 });
 
 // ── API Routes ──────────────────────────────────────────────
+app.use('/api/auth/login', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/entreprises', entrepriseRoutes);

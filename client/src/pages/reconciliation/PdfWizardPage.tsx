@@ -323,9 +323,9 @@ export default function PdfWizardPage() {
                     : <><Download size={16} /> Générer PV Officiel PDF</>}
                 </button>
                 {selected.pv_url && (
-                  <a href={selected.pv_url} target="_blank" rel="noreferrer" className="btn btn-ghost" style={{ justifyContent: 'center' }}>
+                  <button className="btn btn-ghost" style={{ justifyContent: 'center' }} onClick={() => generatePV(selected)} disabled={generating}>
                     <FileText size={16} /> Voir le PV existant
-                  </a>
+                  </button>
                 )}
               </div>
             </div>

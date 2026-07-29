@@ -7,6 +7,9 @@ import { authenticate, AuthRequest, JwtPayload } from '../../middleware/auth';
 
 const router = Router();
 
+const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
+const LOCKOUT_THRESHOLD = 5;
+
 // ── Validation Schemas ──────────────────────────────────────
 const loginSchema = z.object({
   email: z.string().email(),
@@ -65,6 +68,15 @@ router.post('/login', async (req, res): Promise<void> => {
       return;
     }
 
+    // Verrouillage temporaire après plusieurs échecs consécutifs (anti brute-force)
+    const echecsRecents = await prisma.logConnexion.count({
+      where: { utilisateur_id: user.id, succes: false, created_at: { gte: new Date(Date.now() - LOCKOUT_WINDOW_MS) } },
+    });
+    if (echecsRecents >= LOCKOUT_THRESHOLD) {
+      res.status(423).json({ success: false, message: `Compte temporairement verrouillé après ${LOCKOUT_THRESHOLD} échecs. Réessayez dans quelques minutes.`, code: 'ACCOUNT_LOCKED' });
+      return;
+    }
+
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       await prisma.logConnexion.create({
@@ -92,11 +104,11 @@ router.post('/login', async (req, res): Promise<void> => {
 
     const { accessToken, refreshToken } = generateTokens(payload);
 
-    // Save refresh token & update last login
+    // Save refresh token (hashed — never store bearer tokens in plaintext) & update last login
     await prisma.utilisateur.update({
       where: { id: user.id },
       data: {
-        refresh_token: refreshToken,
+        refresh_token: await bcrypt.hash(refreshToken, 12),
         derniere_connexion: new Date(),
         updated_by: user.id,
       },
@@ -146,10 +158,10 @@ router.post('/refresh', async (req, res): Promise<void> => {
   try {
     const decoded = jwt.verify(refreshToken, process.env.JWT_REFRESH_SECRET!) as { userId: number };
     const user = await prisma.utilisateur.findFirst({
-      where: { id: decoded.userId, refresh_token: refreshToken, etat: 'ACTIF' },
+      where: { id: decoded.userId, etat: 'ACTIF' },
     });
 
-    if (!user) {
+    if (!user || !user.refresh_token || !(await bcrypt.compare(refreshToken, user.refresh_token))) {
       res.status(401).json({ success: false, message: 'Refresh token invalide' });
       return;
     }
@@ -166,7 +178,7 @@ router.post('/refresh', async (req, res): Promise<void> => {
 
     await prisma.utilisateur.update({
       where: { id: user.id },
-      data: { refresh_token: newRefreshToken, updated_by: user.id },
+      data: { refresh_token: await bcrypt.hash(newRefreshToken, 12), updated_by: user.id },
     });
 
     res.json({ success: true, accessToken, refreshToken: newRefreshToken });

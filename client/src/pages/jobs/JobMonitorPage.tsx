@@ -16,6 +16,7 @@ export default function JobMonitorPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const loadJobs = () => {
     setLoading(true);
@@ -41,13 +42,23 @@ export default function JobMonitorPage() {
   }, [socket, jobs.length]);
 
   const cancel = async (id: number) => {
-    await api.post(`/jobs/${id}/cancel`).catch(() => {});
-    loadJobs();
+    setError(null);
+    try {
+      await api.post(`/jobs/${id}/cancel`);
+      loadJobs();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Erreur lors de l\'annulation du job');
+    }
   };
 
   const resume = async (id: number) => {
-    await api.post(`/jobs/${id}/resume`).catch(() => {});
-    loadJobs();
+    setError(null);
+    try {
+      await api.post(`/jobs/${id}/resume`);
+      loadJobs();
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Erreur lors de la reprise du job');
+    }
   };
 
   const filtered = jobs.filter(j => !filter || j.statut === filter);
@@ -63,6 +74,12 @@ export default function JobMonitorPage() {
         </select>
         <button className="btn btn-ghost" onClick={loadJobs}><RefreshCw size={15} style={{ animation: loading ? 'spin 0.8s linear infinite' : 'none' }} /> Actualiser</button>
       </div>
+
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13, background: '#fee2e2', color: '#991b1b', border: '1px solid #fca5a5' }}>
+          <AlertCircle size={15} /> {error}
+        </div>
+      )}
 
       {/* Stats */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>

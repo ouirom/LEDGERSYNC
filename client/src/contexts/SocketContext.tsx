@@ -16,12 +16,14 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const token = localStorage.getItem('accessToken');
-    if (!token) return;
+    if (!localStorage.getItem('accessToken')) return;
 
     const s = io('/', {
       path: '/socket.io',
-      auth: { token },
+      // Callback form: ré-évalué à chaque (re)connexion, pour toujours envoyer
+      // l'access token courant (celui-ci tourne toutes les 15 min via le refresh
+      // axios) plutôt qu'un token figé au montage qui expirerait sur une longue session.
+      auth: (cb) => cb({ token: localStorage.getItem('accessToken') }),
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionAttempts: 5,
