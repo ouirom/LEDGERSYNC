@@ -83,6 +83,7 @@ app.get('/api/health', (_req, res) => {
 
 // ── API Routes ──────────────────────────────────────────────
 app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/forgot-password', authLimiter);
 app.use('/api/auth', authRoutes);
 app.use('/api/tenants', tenantRoutes);
 app.use('/api/entreprises', entrepriseRoutes);

@@ -4,6 +4,8 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { SocketProvider } from './contexts/SocketContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
+import ResetPasswordPage from './pages/ResetPasswordPage';
 import OperationalDashboard from './pages/dashboard/OperationalDashboard';
 import ExecutiveDashboard from './pages/dashboard/ExecutiveDashboard';
 import ReconciliationWorkspace from './pages/reconciliation/ReconciliationWorkspace';
@@ -38,6 +40,8 @@ function App() {
         <BrowserRouter>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+            <Route path="/reset-password" element={<ResetPasswordPage />} />
             <Route path="/" element={
               <PrivateRoute>
                 <SocketProvider>

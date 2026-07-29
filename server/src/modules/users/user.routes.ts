@@ -6,6 +6,7 @@ import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { isPrismaError, errorMessage } from '../../utils/errors';
+import { sendAccountCreatedEmail } from '../../utils/mailer';
 
 const router = Router();
 router.use(authenticate, authorize('SUPER_ADMIN', 'ADMIN_TENANT'));
@@ -101,6 +102,9 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       select: userSelect,
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: data.id, action: 'CREATE', apres: { email, nom, prenom, role }, ipAddress: req.ip });
+    // Notification par email : ne bloque pas la réponse et n'échoue jamais la création
+    // (sendAccountCreatedEmail avale ses propres erreurs, voir mailer.ts).
+    void sendAccountCreatedEmail({ to: email, prenom, nom, role, entreprise: data.entreprise?.nom });
     res.status(201).json({ success: true, data });
   } catch (err) {
     if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Cet email est déjà utilisé dans ce tenant' }); return; }

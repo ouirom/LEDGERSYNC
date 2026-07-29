@@ -1,14 +1,17 @@
 import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest, JwtPayload } from '../../middleware/auth';
+import { sendPasswordResetEmail, sendPasswordChangedEmail } from '../../utils/mailer';
 
 const router = Router();
 
 const LOCKOUT_WINDOW_MS = 15 * 60 * 1000;
 const LOCKOUT_THRESHOLD = 5;
+const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 heure
 
 // ── Validation Schemas ──────────────────────────────────────
 const loginSchema = z.object({
@@ -16,6 +19,11 @@ const loginSchema = z.object({
   password: z.string().min(6),
   tenant_code: z.string().optional(),
 });
+
+const forgotPasswordSchema = z.object({ email: z.string().email() });
+const resetPasswordSchema = z.object({ token: z.string().min(1), password: z.string().min(6).max(100) });
+
+const hashResetToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
 // ── Helpers ─────────────────────────────────────────────────
 const generateTokens = (payload: JwtPayload) => {
@@ -212,6 +220,63 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     const { password_hash: _, refresh_token: __, ...safeUser } = user;
     res.json({ success: true, user: safeUser });
   } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── POST /api/auth/forgot-password ──────────────────────────
+// Toujours répondre avec succès, que l'email existe ou non (pas d'énumération
+// de comptes) : seul l'envoi effectif de l'email diffère selon le cas.
+router.post('/forgot-password', async (req, res): Promise<void> => {
+  const parsed = forgotPasswordSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { email } = parsed.data;
+  const genericResponse = { success: true, message: 'Si un compte existe avec cet email, un lien de réinitialisation vient de lui être envoyé.' };
+
+  try {
+    const user = await prisma.utilisateur.findFirst({ where: { email, etat: 'ACTIF' } });
+    if (user) {
+      const rawToken = crypto.randomBytes(32).toString('hex');
+      await prisma.utilisateur.update({
+        where: { id: user.id },
+        data: { reset_token_hash: hashResetToken(rawToken), reset_token_expires: new Date(Date.now() + RESET_TOKEN_TTL_MS), updated_by: user.id },
+      });
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+      void sendPasswordResetEmail({ to: user.email, prenom: user.prenom, resetUrl: `${clientUrl}/reset-password?token=${rawToken}` });
+    }
+    res.json(genericResponse);
+  } catch (err) {
+    console.error('[AUTH/FORGOT-PASSWORD]', err);
+    res.json(genericResponse); // ne jamais révéler d'erreur interne à ce stade non plus
+  }
+});
+
+// ── POST /api/auth/reset-password ───────────────────────────
+router.post('/reset-password', async (req, res): Promise<void> => {
+  const parsed = resetPasswordSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { token, password } = parsed.data;
+
+  try {
+    const user = await prisma.utilisateur.findFirst({
+      where: { reset_token_hash: hashResetToken(token), reset_token_expires: { gt: new Date() }, etat: 'ACTIF' },
+    });
+    if (!user) { res.status(400).json({ success: false, message: 'Lien de réinitialisation invalide ou expiré' }); return; }
+
+    await prisma.utilisateur.update({
+      where: { id: user.id },
+      data: {
+        password_hash: await bcrypt.hash(password, 12),
+        reset_token_hash: null,
+        reset_token_expires: null,
+        refresh_token: null, // invalide toute session active (force une reconnexion avec le nouveau mot de passe)
+        updated_by: user.id,
+      },
+    });
+    void sendPasswordChangedEmail({ to: user.email, prenom: user.prenom });
+    res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
+  } catch (err) {
+    console.error('[AUTH/RESET-PASSWORD]', err);
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

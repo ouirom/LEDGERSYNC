@@ -254,6 +254,8 @@ model Utilisateur {
   password_hash   String           @db.VarChar(255)
   role            RoleUtilisateur  @default(USER)
   refresh_token   String?          @db.Text
+  reset_token_hash String?         @db.VarChar(255)
+  reset_token_expires DateTime?
   derniere_connexion DateTime?
   etat            EtatGeneral      @default(ACTIF)
   created_at      DateTime         @default(now())
