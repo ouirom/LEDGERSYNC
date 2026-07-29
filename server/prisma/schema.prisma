@@ -337,6 +337,7 @@ model JobTraitement {
 
   utilisateur           Utilisateur? @relation(fields: [utilisateur_id], references: [id])
   fichiers_sources      FichierSource[]
+  releves_bancaires     ReleveBancaire[]
 
   @@map("jobs_traitements")
 }
@@ -423,9 +424,35 @@ model CompteBancaire {
   banque          Banque       @relation(fields: [banque_id], references: [id])
   ecritures       EcritureComptable[]
   releve_lignes   ReleveBancaireLigne[]
+  releves_bancaires ReleveBancaire[]
   rapprochements  Rapprochement[]
 
   @@map("comptes_bancaires")
+}
+
+// Un relevé bancaire regroupe les lignes d'un même import (potentiellement
+// multi-fichiers, ex. un relevé PDF/Excel scanné en plusieurs pages) sous
+// une seule entité consultable. Une banque (via ses comptes) peut en avoir
+// plusieurs ; chaque relevé peut couvrir plusieurs pages (nb_pages).
+model ReleveBancaire {
+  id                 Int          @id @default(autoincrement())
+  compte_bancaire_id Int
+  job_id             Int?
+  reference          String?      @db.VarChar(100)
+  date_debut         DateTime?    @db.Date
+  date_fin           DateTime?    @db.Date
+  nb_pages           Int          @default(1)
+  etat               EtatGeneral  @default(BROUILLON)
+  created_at         DateTime     @default(now())
+  created_by         Int?
+  updated_at         DateTime     @updatedAt
+  updated_by         Int?
+
+  compte_bancaire    CompteBancaire        @relation(fields: [compte_bancaire_id], references: [id])
+  job                JobTraitement?        @relation(fields: [job_id], references: [id])
+  lignes             ReleveBancaireLigne[]
+
+  @@map("releves_bancaires")
 }
 
 // ============================================================
@@ -484,6 +511,7 @@ model EcritureComptable {
 model ReleveBancaireLigne {
   id              Int          @id @default(autoincrement())
   compte_bancaire_id Int
+  releve_bancaire_id Int?
   job_id          Int?
   reference       String?      @db.VarChar(100)
   libelle         String       @db.Text
@@ -500,9 +528,11 @@ model ReleveBancaireLigne {
   updated_at      DateTime     @updatedAt
   updated_by      Int?
 
-  compte_bancaire CompteBancaire @relation(fields: [compte_bancaire_id], references: [id])
+  compte_bancaire CompteBancaire  @relation(fields: [compte_bancaire_id], references: [id])
+  releve_bancaire ReleveBancaire? @relation(fields: [releve_bancaire_id], references: [id])
 
   @@index([compte_bancaire_id, lettree])
+  @@index([releve_bancaire_id])
   @@map("releve_bancaire_lignes")
 }
 

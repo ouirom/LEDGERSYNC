@@ -107,6 +107,36 @@ export interface Periode {
   statut: string;
 }
 
+export interface ReleveBancaire {
+  id: number;
+  compte_bancaire_id: number;
+  reference?: string | null;
+  date_debut?: string | null;
+  date_fin?: string | null;
+  nb_pages: number;
+  etat: string;
+  created_at: string;
+  compte_bancaire?: { id: number; intitule: string; banque?: { nom: string } };
+  _count?: { lignes: number };
+}
+
+export interface PreviewLigne {
+  date_operation: string | null;
+  libelle: string;
+  date_valeur: string | null;
+  debit: number | null;
+  credit: number | null;
+  valide: boolean;
+}
+
+export interface ImportPreview {
+  nb_pages: number;
+  total_lignes: number;
+  lignes_invalides: number;
+  pages: { nom: string; nb_lignes: number }[];
+  apercu: PreviewLigne[];
+}
+
 export interface JobTraitement {
   id: number;
   nom_fichier: string | null;

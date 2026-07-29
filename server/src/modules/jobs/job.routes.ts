@@ -84,15 +84,14 @@ router.post('/:id/resume', async (req: AuthRequest, res: Response): Promise<void
   try {
     const job = await prisma.jobTraitement.findFirst({
       where: { id: jobId, tenant_id: req.user!.tenantId },
-      include: { fichiers_sources: true },
+      include: { fichiers_sources: { orderBy: { id: 'asc' } } },
     });
     if (!job) { res.status(404).json({ success: false, message: 'Job non trouvé' }); return; }
     if (job.statut !== 'ECHOUE' && job.statut !== 'ANNULE') {
       res.status(400).json({ success: false, message: 'Seuls les jobs échoués ou annulés peuvent être repris' }); return;
     }
 
-    const fichier = job.fichiers_sources[0];
-    if (!fichier) { res.status(400).json({ success: false, message: 'Fichier source introuvable' }); return; }
+    if (job.fichiers_sources.length === 0) { res.status(400).json({ success: false, message: 'Fichier source introuvable' }); return; }
 
     // Récupérer le compte_bancaire_id depuis les données du job (resultat JSON)
     const jobResultat = job.resultat as Record<string, unknown> | null;
@@ -103,17 +102,25 @@ router.post('/:id/resume', async (req: AuthRequest, res: Response): Promise<void
       return;
     }
 
+    const releveBancaire = await prisma.releveBancaire.findFirst({ where: { job_id: jobId } });
+    if (!releveBancaire) {
+      res.status(400).json({ success: false, message: 'Relevé bancaire associé introuvable. Relancez un nouvel import.' });
+      return;
+    }
+
     await prisma.jobTraitement.update({
       where: { id: jobId },
       data: { statut: 'EN_ATTENTE', updated_by: req.user!.userId },
     });
 
+    const uploadDir = process.env.UPLOAD_DIR || './uploads';
     const bullJob = await importQueue.add(`resume-${jobId}`, {
       jobId,
       tenantId: req.user!.tenantId,
       userId: req.user!.userId,
-      filePath: `${process.env.UPLOAD_DIR || './uploads'}/${fichier.nom_stockage}`,
+      filePaths: job.fichiers_sources.map(f => `${uploadDir}/${f.nom_stockage}`),
       compteId,
+      releveBancaireId: releveBancaire.id,
       resumeFromIndex: job.index_derniere_ligne,
     });
 
