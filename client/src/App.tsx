@@ -1,0 +1,79 @@
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { ThemeProvider } from './contexts/ThemeContext';
+import { SocketProvider } from './contexts/SocketContext';
+import AppLayout from './components/layout/AppLayout';
+import LoginPage from './pages/LoginPage';
+import OperationalDashboard from './pages/dashboard/OperationalDashboard';
+import ExecutiveDashboard from './pages/dashboard/ExecutiveDashboard';
+import ReconciliationWorkspace from './pages/reconciliation/ReconciliationWorkspace';
+import ExcelImportPage from './pages/reconciliation/ExcelImportPage';
+import PdfWizardPage from './pages/reconciliation/PdfWizardPage';
+import JobMonitorPage from './pages/jobs/JobMonitorPage';
+import PeriodsSettingsPage from './pages/settings/PeriodsSettingsPage';
+import ThemesSettingsPage from './pages/settings/ThemesSettingsPage';
+import BankTemplatesPage from './pages/settings/BankTemplatesPage';
+import AuditTrailPage from './pages/admin/AuditTrailPage';
+import HierarchyPage from './pages/admin/HierarchyPage';
+import ProfilePage from './pages/ProfilePage';
+import HelpPage from './pages/HelpPage';
+
+const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: 'var(--bg)' }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{ width: 48, height: 48, border: '3px solid var(--border)', borderTopColor: 'var(--primary)', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 16px' }} />
+        <div style={{ color: 'var(--text-muted)', fontSize: 14 }}>Chargement...</div>
+      </div>
+    </div>
+  );
+  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+function App() {
+  return (
+    <ThemeProvider>
+      <AuthProvider>
+        <BrowserRouter>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/" element={
+              <PrivateRoute>
+                <SocketProvider>
+                  <AppLayout />
+                </SocketProvider>
+              </PrivateRoute>
+            }>
+              <Route index element={<Navigate to="/dashboard/operational" replace />} />
+              {/* Dashboards */}
+              <Route path="dashboard/operational" element={<OperationalDashboard />} />
+              <Route path="dashboard/executive" element={<ExecutiveDashboard />} />
+              <Route path="dashboard/audit" element={<AuditTrailPage />} />
+              {/* Rapprochement */}
+              <Route path="reconciliation/workspace" element={<ReconciliationWorkspace />} />
+              <Route path="reconciliation/excel-import" element={<ExcelImportPage />} />
+              <Route path="reconciliation/pdf-wizard" element={<PdfWizardPage />} />
+              {/* Jobs */}
+              <Route path="jobs/monitor" element={<JobMonitorPage />} />
+              {/* Settings */}
+              <Route path="settings/periods" element={<PeriodsSettingsPage />} />
+              <Route path="settings/themes" element={<ThemesSettingsPage />} />
+              <Route path="settings/bank-templates" element={<BankTemplatesPage />} />
+              {/* Admin */}
+              <Route path="admin/hierarchy" element={<HierarchyPage />} />
+              <Route path="admin/audit-trail" element={<AuditTrailPage />} />
+              {/* Other */}
+              <Route path="profile" element={<ProfilePage />} />
+              <Route path="help" element={<HelpPage />} />
+              <Route path="help/admin" element={<HelpPage isAdmin />} />
+              <Route path="*" element={<Navigate to="/dashboard/operational" replace />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </AuthProvider>
+    </ThemeProvider>
+  );
+}
+
+export default App;
