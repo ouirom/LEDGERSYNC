@@ -1,8 +1,23 @@
 import { useEffect, useState, useRef } from 'react';
 import { Upload, FileSpreadsheet, X, Loader2, ExternalLink } from 'lucide-react';
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/browser';
 import api from '../../api/axios';
 import { useSocket } from '../../contexts/SocketContext';
+
+function parseCsvPreview(text: string): { headers: string[]; rows: Record<string, unknown>[] } {
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.length > 0).slice(0, 6);
+  if (lines.length === 0) return { headers: [], rows: [] };
+  const delimiter = (lines[0]!.match(/;/g) || []).length > (lines[0]!.match(/,/g) || []).length ? ';' : ',';
+  const splitLine = (line: string) => line.split(delimiter).map(c => c.replace(/^"|"$/g, '').trim());
+  const headers = splitLine(lines[0]!);
+  const rows = lines.slice(1).map(line => {
+    const cells = splitLine(line);
+    const row: Record<string, unknown> = {};
+    headers.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+    return row;
+  });
+  return { headers, rows };
+}
 
 interface JobProgress { progression: number; lignesTraitees: number; totalLignes: number; etaSeconds?: number; statut: string; erreurMessage?: string; }
 
@@ -44,18 +59,29 @@ export default function ExcelImportPage() {
     };
   }, [socket, jobId]);
 
-  const parseFile = (f: File) => {
+  const parseFile = async (f: File) => {
     setFile(f);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target!.result as ArrayBuffer);
-      const wb = XLSX.read(data, { type: 'array' });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' });
-      setHeaders(rows.length > 0 ? Object.keys(rows[0]) : []);
-      setPreview(rows.slice(0, 5));
-    };
-    reader.readAsArrayBuffer(f);
+    try {
+      if (f.name.toLowerCase().endsWith('.csv')) {
+        const text = await f.text();
+        const { headers: h, rows } = parseCsvPreview(text);
+        setHeaders(h);
+        setPreview(rows.slice(0, 5));
+        return;
+      }
+      const rows = await readSheet(f); // première feuille par défaut
+      const h = (rows[0] || []).map(c => String(c ?? '').trim());
+      const objRows = rows.slice(1, 6).map(row => {
+        const obj: Record<string, unknown> = {};
+        h.forEach((col, i) => { obj[col] = row[i] ?? ''; });
+        return obj;
+      });
+      setHeaders(h);
+      setPreview(objRows);
+    } catch {
+      setHeaders([]);
+      setPreview([]);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -112,8 +138,8 @@ export default function ExcelImportPage() {
         >
           <FileSpreadsheet size={40} style={{ margin: '0 auto 12px', color: 'var(--primary)', opacity: 0.7 }} />
           <p style={{ fontWeight: 600, margin: '0 0 6px', fontSize: 16 }}>Déposer votre fichier ici</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>ou cliquer pour parcourir — .xlsx, .xls, .csv (max 50 MB)</p>
-          <input ref={fileInput} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) parseFile(e.target.files[0]); }} />
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>ou cliquer pour parcourir — .xlsx, .csv (max 50 MB)</p>
+          <input ref={fileInput} type="file" accept=".xlsx,.csv" style={{ display: 'none' }} onChange={e => { if (e.target.files?.[0]) parseFile(e.target.files[0]); }} />
         </div>
       ) : (
         <div className="card" style={{ padding: 20 }}>

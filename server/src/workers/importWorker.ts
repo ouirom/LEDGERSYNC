@@ -2,11 +2,71 @@ import { Queue, Worker, Job } from 'bullmq';
 import { redis } from '../config/redis';
 import prisma from '../config/db';
 import { emitJobProgress, emitJobCompleted, emitJobFailed } from '../sockets/socketServer';
-import * as XLSX from 'xlsx';
+import { readSheet } from 'read-excel-file/node';
 import fs from 'fs';
+import path from 'path';
 
 const CHUNK_SIZE = 500;
 const IMPORT_QUEUE_NAME = 'import-queue';
+
+// Détecte le séparateur CSV (virgule ou point-virgule, courant dans les exports FR)
+// en comptant les occurrences sur la ligne d'en-tête.
+function detectCsvDelimiter(headerLine: string): string {
+  const commas = (headerLine.match(/,/g) || []).length;
+  const semicolons = (headerLine.match(/;/g) || []).length;
+  return semicolons > commas ? ';' : ',';
+}
+
+function parseCsvLine(line: string, delimiter: string): string[] {
+  const result: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (line[i + 1] === '"') { cur += '"'; i++; } else inQuotes = false;
+      } else cur += c;
+    } else if (c === '"') {
+      inQuotes = true;
+    } else if (c === delimiter) {
+      result.push(cur); cur = '';
+    } else {
+      cur += c;
+    }
+  }
+  result.push(cur);
+  return result;
+}
+
+function parseCsv(text: string): Record<string, unknown>[] {
+  const lines = text.split(/\r\n|\n|\r/).filter(l => l.length > 0);
+  if (lines.length === 0) return [];
+  const delimiter = detectCsvDelimiter(lines[0]!);
+  const headers = parseCsvLine(lines[0]!, delimiter).map(h => h.trim());
+  return lines.slice(1).map(line => {
+    const cells = parseCsvLine(line, delimiter);
+    const row: Record<string, unknown> = {};
+    headers.forEach((h, i) => { row[h] = cells[i] ?? ''; });
+    return row;
+  });
+}
+
+// Lit un fichier .xlsx (read-excel-file) ou .csv (parseur maison) et le
+// normalise en tableau d'objets {en-tête: valeur}, comme le faisait XLSX.utils.sheet_to_json.
+async function parseSourceFile(filePath: string): Promise<Record<string, unknown>[]> {
+  if (path.extname(filePath).toLowerCase() === '.csv') {
+    return parseCsv(fs.readFileSync(filePath, 'utf8'));
+  }
+  const rows = await readSheet(filePath); // première feuille par défaut
+  if (rows.length === 0) return [];
+  const headers = rows[0]!.map(h => String(h ?? '').trim());
+  return rows.slice(1).map(row => {
+    const obj: Record<string, unknown> = {};
+    headers.forEach((h, i) => { obj[h] = row[i] ?? ''; });
+    return obj;
+  });
+}
 
 // ── Queue Definition ─────────────────────────────────────
 export const importQueue = new Queue(IMPORT_QUEUE_NAME, {
@@ -37,11 +97,8 @@ export const importWorker = new Worker<ImportJobData>(
 
     const startTime = Date.now();
 
-    // Lire le fichier Excel
-    const workbook = XLSX.readFile(filePath);
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+    // Lire le fichier Excel / CSV
+    const rows = await parseSourceFile(filePath);
 
     const totalLignes = rows.length;
 
@@ -75,12 +132,24 @@ export const importWorker = new Worker<ImportJobData>(
           return '';
         };
 
+        // read-excel-file convertit nativement les cellules-date Excel en objets Date,
+        // mais une date saisie comme texte JJ/MM/AAAA reste une chaîne. Le constructeur
+        // Date() natif interprète "14/07/2026" en MM/DD/YYYY (donc invalide : mois 14),
+        // d'où un parseur JJ/MM/AAAA explicite plutôt que de se fier au format US ambigu.
+        const toDate = (v: unknown): Date => {
+          if (v instanceof Date) return v;
+          const s = String(v || '').trim();
+          const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+          if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+          return new Date(s);
+        };
+
         const montantRaw = parseFloat(
           String(getCol('montant', 'amount', 'debit_credit') || '0')
             .replace(/\s/g, '').replace(',', '.')
         );
         const type: 'DEBIT' | 'CREDIT' = montantRaw < 0 ? 'DEBIT' : 'CREDIT';
-        const dateRaw = String(getCol('date', 'date_operation', 'date opération', 'date_value') || '');
+        const dateValeurRaw = getCol('date valeur', 'date_valeur');
 
         return {
           compte_bancaire_id: compteId,
@@ -88,8 +157,8 @@ export const importWorker = new Worker<ImportJobData>(
           libelle: String(getCol('libelle', 'libellé', 'libellé', 'description', 'motif') || 'Sans libellé'),
           montant: Math.abs(montantRaw),
           type,
-          date_operation: new Date(dateRaw),
-          date_valeur: getCol('date valeur', 'date_valeur') ? new Date(String(getCol('date valeur', 'date_valeur'))) : null,
+          date_operation: toDate(getCol('date', 'date_operation', 'date opération', 'date_value')),
+          date_valeur: dateValeurRaw ? toDate(dateValeurRaw) : null,
           num_ligne: i + idx + 1,
           etat: 'BROUILLON' as const,
           created_by: userId,

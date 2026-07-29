@@ -20,10 +20,13 @@ const upload = multer({
   storage,
   limits: { fileSize: (parseInt(process.env.MAX_FILE_SIZE_MB || '50')) * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
-    const allowed = ['.xlsx', '.xls', '.csv'];
+    // .xls (format binaire Excel 97-2003) n'est plus accepté : la bibliothèque de lecture
+    // (read-excel-file, sans vulnérabilité connue) ne supporte que le format .xlsx (OOXML) et .csv,
+    // contrairement à l'ancienne dépendance xlsx/SheetJS qui présentait des failles non corrigées.
+    const allowed = ['.xlsx', '.csv'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Format non supporté. Utilisez .xlsx, .xls ou .csv'));
+    else cb(new Error('Format non supporté. Utilisez .xlsx ou .csv (le format .xls hérité n\'est plus accepté).'));
   },
 });
 
