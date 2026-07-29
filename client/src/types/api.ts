@@ -131,6 +131,17 @@ export interface AuditLog {
   apres?: unknown;
 }
 
+export interface LogConnexion {
+  id: number;
+  utilisateur_id: number;
+  succes: boolean;
+  motif_echec: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  created_at: string;
+  utilisateur: { id: number; nom: string; prenom: string; email: string };
+}
+
 export interface AutoMatchSuggestion {
   ecriture_id: number;
   releve_id: number;

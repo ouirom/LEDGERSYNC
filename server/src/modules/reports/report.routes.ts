@@ -198,6 +198,37 @@ router.get('/audit-export', async (req: AuthRequest, res: Response): Promise<voi
   }
 });
 
+// GET /api/reports/connexions-export — Export CSV journal des connexions
+router.get('/connexions-export', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { date_debut, date_fin, succes } = req.query;
+  try {
+    const logs = await prisma.logConnexion.findMany({
+      where: {
+        utilisateur: { tenant_id: req.user!.tenantId },
+        ...(succes === 'true' || succes === 'false' ? { succes: succes === 'true' } : {}),
+        created_at: {
+          gte: date_debut ? new Date(date_debut as string) : undefined,
+          lte: date_fin ? new Date(date_fin as string) : undefined,
+        },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 10000,
+      include: { utilisateur: { select: { nom: true, prenom: true, email: true } } },
+    });
+
+    const csvLines = ['ID,Utilisateur,Email,Statut,Motif_Echec,IP,User_Agent,Date'];
+    logs.forEach(l => {
+      csvLines.push(`${l.id},"${l.utilisateur.prenom} ${l.utilisateur.nom}","${l.utilisateur.email}","${l.succes ? 'Succès' : 'Échec'}","${l.motif_echec ?? ''}","${l.ip_address ?? ''}","${(l.user_agent ?? '').replace(/"/g, '""')}","${l.created_at.toISOString()}"`);
+    });
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="journal_connexions.csv"');
+    res.send('﻿' + csvLines.join('\n'));
+  } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
 // GET /api/reports/dashboard-summary — KPIs agrégés pour le tableau de bord
 router.get('/dashboard-summary', async (req: AuthRequest, res: Response): Promise<void> => {
   const now = new Date();
