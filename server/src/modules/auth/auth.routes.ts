@@ -216,37 +216,9 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
   }
 });
 
-// ── GET /api/auth/users ─────────────────────────────────────
-// Lister les utilisateurs du tenant (pour la hiérarchie admin)
-router.get('/users', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { page = '1', limit = '100' } = req.query;
-  const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
-  try {
-    const [data, total] = await Promise.all([
-      prisma.utilisateur.findMany({
-        where: { tenant_id: req.user!.tenantId, etat: { not: 'ARCHIVE' } },
-        select: {
-          id: true,
-          email: true,
-          nom: true,
-          prenom: true,
-          role: true,
-          etat: true,
-          derniere_connexion: true,
-          entreprise: { select: { id: true, nom: true, code: true } },
-          service: { select: { id: true, nom: true } },
-        },
-        skip,
-        take: parseInt(limit as string),
-        orderBy: { nom: 'asc' },
-      }),
-      prisma.utilisateur.count({ where: { tenant_id: req.user!.tenantId } }),
-    ]);
-    res.json({ success: true, data, meta: { total } });
-  } catch {
-    res.status(500).json({ success: false, message: 'Erreur interne' });
-  }
-});
+// Gestion complète des utilisateurs (liste/création/édition/suppression) : voir
+// server/src/modules/users/user.routes.ts (monté sur /api/users). Ce module reste
+// dédié à l'authentification (login/refresh/logout/me).
 
 export default router;
 

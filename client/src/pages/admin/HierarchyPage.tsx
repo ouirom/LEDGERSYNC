@@ -1,8 +1,36 @@
 import { useEffect, useState } from 'react';
-import { Building2, Users, ChevronRight, ChevronDown, Plus, Shield, Briefcase, User, Edit3, Trash2, X, Save } from 'lucide-react';
+import { Building2, Users, ChevronRight, ChevronDown, Plus, Shield, Briefcase, User, Edit3, Trash2, X, Save, UserPlus, KeyRound } from 'lucide-react';
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
-import type { Entreprise, Utilisateur } from '../../types/api';
+import { useAuth } from '../../contexts/AuthContext';
+import { ROLES_UTILISATEUR, type Entreprise, type Utilisateur, type RoleUtilisateur } from '../../types/api';
+
+const ROLE_LABELS: Record<RoleUtilisateur, string> = {
+  SUPER_ADMIN: 'Super Admin',
+  ADMIN_TENANT: 'Admin Tenant',
+  DAF: 'DAF',
+  MANAGER: 'Manager',
+  SUPERVISEUR: 'Superviseur',
+  USER: 'Utilisateur',
+  AUDITEUR: 'Auditeur',
+};
+
+// Un ADMIN_TENANT ne peut pas s'attribuer ni attribuer SUPER_ADMIN/ADMIN_TENANT
+// (séparation des fonctions, miroir de la règle appliquée côté serveur)
+const ROLES_RESERVED_TO_SUPER_ADMIN: RoleUtilisateur[] = ['SUPER_ADMIN', 'ADMIN_TENANT'];
+
+interface UserModalState {
+  mode: 'add' | 'edit';
+  targetId?: number;
+  nom: string;
+  prenom: string;
+  email: string;
+  password: string;
+  role: RoleUtilisateur;
+  entreprise_id: string;
+  service_id: string;
+  etat: string;
+}
 
 type NodeType = 'entreprise' | 'succursale' | 'sous_succursale' | 'direction' | 'service';
 
@@ -143,7 +171,12 @@ function TreeNode({ node, depth = 0, onAddChild, onEdit, onDelete }: {
   );
 }
 
+const EMPTY_USER_FORM: Omit<UserModalState, 'mode' | 'targetId'> = {
+  nom: '', prenom: '', email: '', password: '', role: 'USER', entreprise_id: '', service_id: '', etat: 'ACTIF',
+};
+
 export default function HierarchyPage() {
+  const { user: currentUser, hasRole } = useAuth();
   const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [utilisateurs, setUtilisateurs] = useState<Utilisateur[]>([]);
   const [loading, setLoading] = useState(true);
@@ -152,11 +185,18 @@ export default function HierarchyPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const [userModal, setUserModal] = useState<UserModalState | null>(null);
+  const [userSaving, setUserSaving] = useState(false);
+  const [userError, setUserError] = useState<string | null>(null);
+  const [pwdModal, setPwdModal] = useState<{ targetId: number; nom: string; password: string; confirm: string } | null>(null);
+  const [pwdSaving, setPwdSaving] = useState(false);
+  const [pwdError, setPwdError] = useState<string | null>(null);
+
   const load = () => {
     setLoading(true);
     Promise.all([
       api.get('/entreprises').catch(() => ({ data: { data: [] } })),
-      api.get('/auth/users').catch(() => ({ data: { data: [] } })),
+      api.get('/users').catch(() => ({ data: { data: [] } })),
     ]).then(([e, u]) => {
       setEntreprises(e.data.data || []);
       setUtilisateurs(u.data.data || []);
@@ -269,6 +309,96 @@ export default function HierarchyPage() {
 
   const currentTypeConfig = modal ? globalAddTypes.find(t => t.type === modal.type) : undefined;
 
+  // Services disponibles pour l'affectation d'un utilisateur, avec repère hiérarchique complet
+  // et l'entreprise d'appartenance (pour filtrer selon l'entreprise choisie dans le formulaire)
+  const serviceOptions = entreprises.flatMap(e => (e.succursales || []).flatMap(s => (s.directions || []).flatMap(d => (d.services || []).map(svc => ({
+    id: svc.id,
+    entrepriseId: e.id,
+    label: `${svc.nom} (${d.nom} — ${s.nom})`,
+  })))));
+
+  const assignableRoles = ROLES_UTILISATEUR.filter(r => hasRole('SUPER_ADMIN') || !ROLES_RESERVED_TO_SUPER_ADMIN.includes(r));
+
+  const openAddUser = () => {
+    setUserError(null);
+    setUserModal({ mode: 'add', ...EMPTY_USER_FORM });
+  };
+
+  const openEditUser = (u: Utilisateur) => {
+    setUserError(null);
+    setUserModal({
+      mode: 'edit', targetId: u.id, nom: u.nom, prenom: u.prenom, email: u.email, password: '',
+      role: u.role as RoleUtilisateur, entreprise_id: u.entreprise_id ? String(u.entreprise_id) : '',
+      service_id: u.service_id ? String(u.service_id) : '', etat: u.etat,
+    });
+  };
+
+  const closeUserModal = () => { setUserModal(null); setUserError(null); };
+
+  const submitUserModal = async () => {
+    if (!userModal) return;
+    if (!userModal.nom.trim() || !userModal.prenom.trim() || !userModal.email.trim()) {
+      setUserError('Nom, prénom et email sont obligatoires'); return;
+    }
+    if (userModal.mode === 'add' && userModal.password.length < 6) {
+      setUserError('Le mot de passe doit contenir au moins 6 caractères'); return;
+    }
+    setUserSaving(true);
+    setUserError(null);
+    try {
+      const payload = {
+        nom: userModal.nom.trim(),
+        prenom: userModal.prenom.trim(),
+        email: userModal.email.trim(),
+        role: userModal.role,
+        entreprise_id: userModal.entreprise_id ? parseInt(userModal.entreprise_id) : null,
+        service_id: userModal.service_id ? parseInt(userModal.service_id) : null,
+      };
+      if (userModal.mode === 'add') {
+        await api.post('/users', { ...payload, password: userModal.password });
+      } else {
+        await api.put(`/users/${userModal.targetId}`, { ...payload, etat: userModal.etat });
+      }
+      closeUserModal();
+      load();
+    } catch (err) {
+      setUserError(apiErrorMessage(err, 'Erreur lors de l\'enregistrement'));
+    } finally {
+      setUserSaving(false);
+    }
+  };
+
+  const handleDeleteUser = async (u: Utilisateur) => {
+    if (!confirm(`Archiver le compte de "${u.prenom} ${u.nom}" ? Il ne pourra plus se connecter.`)) return;
+    try {
+      await api.delete(`/users/${u.id}`);
+      load();
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'));
+    }
+  };
+
+  const openResetPassword = (u: Utilisateur) => {
+    setPwdError(null);
+    setPwdModal({ targetId: u.id, nom: `${u.prenom} ${u.nom}`, password: '', confirm: '' });
+  };
+
+  const submitResetPassword = async () => {
+    if (!pwdModal) return;
+    if (pwdModal.password.length < 6) { setPwdError('Le mot de passe doit contenir au moins 6 caractères'); return; }
+    if (pwdModal.password !== pwdModal.confirm) { setPwdError('Les mots de passe ne correspondent pas'); return; }
+    setPwdSaving(true);
+    setPwdError(null);
+    try {
+      await api.patch(`/users/${pwdModal.targetId}/reset-password`, { password: pwdModal.password });
+      setPwdModal(null);
+    } catch (err) {
+      setPwdError(apiErrorMessage(err, 'Erreur lors de la réinitialisation'));
+    } finally {
+      setPwdSaving(false);
+    }
+  };
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
@@ -281,7 +411,11 @@ export default function HierarchyPage() {
           </p>
         </div>
         <div style={{ flex: 1 }} />
-        <button className="btn btn-primary" onClick={openGlobalAdd}><Plus size={15} /> Ajouter une entité</button>
+        {activeTab === 'structure' ? (
+          <button className="btn btn-primary" onClick={openGlobalAdd}><Plus size={15} /> Ajouter une entité</button>
+        ) : (
+          <button className="btn btn-primary" onClick={openAddUser}><UserPlus size={15} /> Ajouter un utilisateur</button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -345,13 +479,14 @@ export default function HierarchyPage() {
                 <th>Entreprise</th>
                 <th>Statut</th>
                 <th>Dernière connexion</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Chargement...</td></tr>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>Chargement...</td></tr>
               ) : utilisateurs.length === 0 ? (
-                <tr><td colSpan={6} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                <tr><td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                   <Users size={32} style={{ margin: '0 auto 8px', opacity: 0.3, display: 'block' }} />
                   Aucun utilisateur trouvé
                 </td></tr>
@@ -364,6 +499,11 @@ export default function HierarchyPage() {
                       </div>
                       <div>
                         <div style={{ fontWeight: 600, fontSize: 13 }}>{u.prenom} {u.nom}</div>
+                        {u.service && (
+                          <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                            {u.service.nom}{u.service.direction ? ` · ${u.service.direction.nom}` : ''}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>
@@ -377,6 +517,15 @@ export default function HierarchyPage() {
                   <td><span className={`badge ${u.etat === 'ACTIF' ? 'badge-success' : 'badge-gray'}`}>{u.etat}</span></td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {u.derniere_connexion ? new Date(u.derniere_connexion).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <button className="btn btn-ghost btn-sm btn-icon" title="Modifier" onClick={() => openEditUser(u)}><Edit3 size={12} /></button>
+                      <button className="btn btn-ghost btn-sm btn-icon" title="Réinitialiser le mot de passe" onClick={() => openResetPassword(u)}><KeyRound size={12} /></button>
+                      {u.id !== currentUser?.id && (
+                        <button className="btn btn-danger btn-sm btn-icon" title="Archiver" onClick={() => handleDeleteUser(u)}><Trash2 size={12} /></button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -455,6 +604,140 @@ export default function HierarchyPage() {
                 disabled={saving || (modal.mode === 'add' && !modal.parentId)}
               >
                 <Save size={15} /> {saving ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Ajout / Édition utilisateur */}
+      {userModal && (
+        <div className="modal-overlay" onClick={closeUserModal}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>
+                {userModal.mode === 'add' ? 'Ajouter un utilisateur' : 'Modifier l\'utilisateur'}
+              </h3>
+              <button className="btn btn-ghost btn-icon" onClick={closeUserModal}><X size={16} /></button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Prénom</label>
+                <input className="input" value={userModal.prenom} onChange={e => setUserModal(m => m && { ...m, prenom: e.target.value })} style={{ width: '100%' }} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nom</label>
+                <input className="input" value={userModal.nom} onChange={e => setUserModal(m => m && { ...m, nom: e.target.value })} style={{ width: '100%' }} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Email</label>
+              <input className="input" type="email" value={userModal.email} onChange={e => setUserModal(m => m && { ...m, email: e.target.value })} style={{ width: '100%' }} />
+            </div>
+
+            {userModal.mode === 'add' && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Mot de passe initial</label>
+                <input className="input" type="password" value={userModal.password} onChange={e => setUserModal(m => m && { ...m, password: e.target.value })} style={{ width: '100%' }} placeholder="6 caractères minimum" />
+              </div>
+            )}
+
+            <div style={{ display: 'grid', gridTemplateColumns: userModal.mode === 'edit' ? '1fr 1fr' : '1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rôle</label>
+                <select className="select" value={userModal.role} onChange={e => setUserModal(m => m && { ...m, role: e.target.value as RoleUtilisateur })} style={{ width: '100%' }}>
+                  {assignableRoles.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+                </select>
+              </div>
+              {userModal.mode === 'edit' && (
+                <div>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Statut</label>
+                  <select className="select" value={userModal.etat} onChange={e => setUserModal(m => m && { ...m, etat: e.target.value })} style={{ width: '100%' }}>
+                    <option value="ACTIF">Actif</option>
+                    <option value="SUSPENDU">Suspendu</option>
+                    <option value="INACTIF">Inactif</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Entreprise</label>
+                <select
+                  className="select"
+                  value={userModal.entreprise_id}
+                  onChange={e => {
+                    const entrepriseId = e.target.value;
+                    setUserModal(m => {
+                      if (!m) return m;
+                      const stillValid = m.service_id && serviceOptions.find(s => String(s.id) === m.service_id)?.entrepriseId === parseInt(entrepriseId);
+                      return { ...m, entreprise_id: entrepriseId, service_id: stillValid ? m.service_id : '' };
+                    });
+                  }}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">— Non assigné —</option>
+                  {entreprises.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Service</label>
+                <select
+                  className="select"
+                  value={userModal.service_id}
+                  onChange={e => setUserModal(m => m && { ...m, service_id: e.target.value })}
+                  style={{ width: '100%' }}
+                  disabled={!userModal.entreprise_id}
+                >
+                  <option value="">— Non assigné —</option>
+                  {serviceOptions.filter(s => String(s.entrepriseId) === userModal.entreprise_id).map(s => (
+                    <option key={s.id} value={s.id}>{s.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {userError && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--danger)' }}>{userError}</div>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={closeUserModal}>Annuler</button>
+              <button className="btn btn-primary" onClick={submitUserModal} disabled={userSaving}>
+                <Save size={15} /> {userSaving ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Réinitialisation du mot de passe */}
+      {pwdModal && (
+        <div className="modal-overlay" onClick={() => setPwdModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <h3 style={{ margin: 0, fontSize: 17, fontWeight: 700 }}>Réinitialiser le mot de passe</h3>
+              <button className="btn btn-ghost btn-icon" onClick={() => setPwdModal(null)}><X size={16} /></button>
+            </div>
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: 'var(--text-muted)' }}>
+              Nouveau mot de passe pour <strong style={{ color: 'var(--text)' }}>{pwdModal.nom}</strong>. Sa session en cours sera invalidée.
+            </p>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nouveau mot de passe</label>
+              <input className="input" type="password" value={pwdModal.password} onChange={e => setPwdModal(m => m && { ...m, password: e.target.value })} style={{ width: '100%' }} />
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Confirmation</label>
+              <input className="input" type="password" value={pwdModal.confirm} onChange={e => setPwdModal(m => m && { ...m, confirm: e.target.value })} style={{ width: '100%' }} />
+            </div>
+
+            {pwdError && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--danger)' }}>{pwdError}</div>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setPwdModal(null)}>Annuler</button>
+              <button className="btn btn-primary" onClick={submitResetPassword} disabled={pwdSaving}>
+                <KeyRound size={15} /> {pwdSaving ? 'Enregistrement...' : 'Réinitialiser'}
               </button>
             </div>
           </div>
