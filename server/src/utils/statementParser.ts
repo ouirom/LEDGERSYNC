@@ -99,44 +99,59 @@ function splitTextRowCells(line: string): string[] {
   return bySeparator.map(c => c.trim()).filter(c => c !== '');
 }
 
-// Extrait les lignes d'un relevé au format PDF. Tente d'abord la détection de
-// tableau (grille visible dans le PDF, le cas le plus fiable) ; si aucun tableau
-// n'est détecté (relevé "à plat", sans bordures vectorielles — le cas le plus
-// courant en pratique), replie sur le texte brut extrait page par page, en
-// utilisant la ligne d'en-tête si elle est repérable (mêmes noms de colonnes
-// que pour un CSV/Excel), sinon une reconstruction positionnelle best-effort.
+// Extrait les lignes d'un relevé au format PDF, sur l'ensemble des pages du
+// fichier (un relevé PDF fait fréquemment plusieurs pages internes, en plus du
+// cas où plusieurs fichiers PDF distincts forment les pages d'un même relevé —
+// voir l'upload multi-fichiers dans releve.routes.ts). Tente d'abord la
+// détection de tableau (grille visible dans le PDF, le cas le plus fiable) sur
+// toutes les pages ; si aucun tableau n'est détecté (relevé "à plat", sans
+// bordures vectorielles — le cas le plus courant en pratique), replie sur le
+// texte brut extrait page par page, en réutilisant la ligne d'en-tête dès
+// qu'elle est repérée sur l'une des pages (elle n'est pas toujours répétée sur
+// chaque page), sinon une reconstruction positionnelle best-effort.
 async function parsePdfFile(filePath: string): Promise<Record<string, unknown>[]> {
   const parser = new PDFParse({ data: fs.readFileSync(filePath) });
   try {
+    // getTable() couvre déjà toutes les pages du PDF (tableResult.pages) : on les
+    // fusionne ici pour traiter le relevé comme un tout, quel que soit son
+    // nombre de pages.
     const tableResult = await parser.getTable();
     const allRows: string[][] = tableResult.pages.flatMap(p => p.tables.flatMap(t => t));
 
     if (allRows.length > 1 && looksLikeHeaderRow(allRows[0]!)) {
       const headers = allRows[0]!.map(h => h.trim());
-      return allRows.slice(1).map(cells => zipHeaderRow(headers, cells));
+      // Une page suivante peut répéter la ligne d'en-tête (mise en page qui la
+      // réimprime sur chaque page) : on l'exclut partout, pas seulement en tête.
+      return allRows.slice(1).filter(cells => !looksLikeHeaderRow(cells)).map(cells => zipHeaderRow(headers, cells));
     }
     if (allRows.length > 1) {
       return allRows.map(mapPositionalRow);
     }
 
-    // Repli texte : une page peut contenir sa propre ligne d'en-tête (relevés
-    // multi-pages qui la répètent) — on la recherche indépendamment par page.
+    // Repli texte : la ligne d'en-tête peut n'apparaître que sur la première
+    // page (les pages suivantes poursuivent le même tableau sans la répéter) —
+    // on la mémorise dès qu'elle est trouvée et on la réutilise pour toutes les
+    // pages suivantes, tout en ignorant les répétitions éventuelles.
     const textResult = await parser.getText();
     const rows: Record<string, unknown>[] = [];
+    let sharedHeaders: string[] | null = null;
+    let debitCreditAmbigu = false;
     for (const page of textResult.pages) {
       const lines = page.text.split(/\r?\n/).map(splitTextRowCells).filter(cells => cells.length >= 2);
       const headerIdx = lines.findIndex(looksLikeHeaderRow);
-      const headers = headerIdx >= 0 ? lines[headerIdx] : null;
-      // Une cellule vide disparaît du texte extrait au lieu de laisser un trou : si la
-      // ligne a moins de cellules que d'en-têtes, une colonne (potentiellement Débit
-      // ou Crédit) a été perdue — voir hasSeparateDebitCreditHeaders ci-dessus.
-      const debitCreditAmbigu = headers ? hasSeparateDebitCreditHeaders(headers) : false;
+      if (headerIdx >= 0 && !sharedHeaders) {
+        sharedHeaders = lines[headerIdx]!;
+        // Une cellule vide disparaît du texte extrait au lieu de laisser un trou : si la
+        // ligne a moins de cellules que d'en-têtes, une colonne (potentiellement Débit
+        // ou Crédit) a été perdue — voir hasSeparateDebitCreditHeaders ci-dessus.
+        debitCreditAmbigu = hasSeparateDebitCreditHeaders(sharedHeaders);
+      }
 
       lines.forEach((cells, i) => {
         if (i === headerIdx || !cells.some(isDateCell)) return;
-        if (!headers) { rows.push(mapPositionalRow(cells)); return; }
-        const row = zipHeaderRow(headers, cells);
-        if (debitCreditAmbigu && cells.length < headers.length) row['_ambigu'] = true;
+        if (!sharedHeaders) { rows.push(mapPositionalRow(cells)); return; }
+        const row = zipHeaderRow(sharedHeaders, cells);
+        if (debitCreditAmbigu && cells.length < sharedHeaders.length) row['_ambigu'] = true;
         rows.push(row);
       });
     }
