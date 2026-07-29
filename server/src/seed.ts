@@ -129,14 +129,54 @@ async function main() {
   });
   console.log('✅ DAF created:', dafUser.email);
 
+  // ── Hiérarchie organisationnelle (Succursale > Direction > Service) ──
+  let siege = await prisma.succursale.findFirst({ where: { entreprise_id: entreprise.id, code: 'SIEGE' } });
+  if (!siege) {
+    siege = await prisma.succursale.create({
+      data: { entreprise_id: entreprise.id, nom: 'Siège Dakar', code: 'SIEGE', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Succursale créée/vérifiée:', siege.nom);
+
+  let dirFinance = await prisma.direction.findFirst({ where: { succursale_id: siege.id, code: 'DIRFIN' } });
+  if (!dirFinance) {
+    dirFinance = await prisma.direction.create({
+      data: { succursale_id: siege.id, nom: 'Direction Financière', code: 'DIRFIN', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  let dirCommerce = await prisma.direction.findFirst({ where: { succursale_id: siege.id, code: 'DIRCOM' } });
+  if (!dirCommerce) {
+    dirCommerce = await prisma.direction.create({
+      data: { succursale_id: siege.id, nom: 'Direction Commerciale', code: 'DIRCOM', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ 2 directions créées/vérifiées');
+
+  const servicesData = [
+    { direction_id: dirFinance.id, code: 'COMPTA', nom: 'Comptabilité' },
+    { direction_id: dirFinance.id, code: 'TRESO', nom: 'Trésorerie' },
+    { direction_id: dirCommerce.id, code: 'VENTES', nom: 'Ventes' },
+    { direction_id: dirCommerce.id, code: 'MKTG', nom: 'Marketing' },
+  ];
+  const services: Record<string, { id: number }> = {};
+  for (const s of servicesData) {
+    let svc = await prisma.service.findFirst({ where: { direction_id: s.direction_id, code: s.code } });
+    if (!svc) {
+      svc = await prisma.service.create({ data: { direction_id: s.direction_id, nom: s.nom, code: s.code, etat: 'ACTIF', created_by: 1, updated_by: 1 } });
+    }
+    services[s.code] = svc;
+  }
+  console.log(`✅ ${servicesData.length} services créés/vérifiés`);
+
   // ── Comptable User ─────────────────────────────────────────
   const userHash = await bcrypt.hash('User@2026!', 12);
   const comptable = await prisma.utilisateur.upsert({
     where: { id: 3 },
-    update: {},
+    update: { service_id: services['COMPTA']!.id },
     create: {
       tenant_id: tenant.id,
       entreprise_id: entreprise.id,
+      service_id: services['COMPTA']!.id,
       email: 'comptable@ledgersync.demo',
       nom: 'DIOP',
       prenom: 'Fatou',
@@ -153,10 +193,11 @@ async function main() {
   const superviseurHash = await bcrypt.hash('Superviseur@2026!', 12);
   const superviseur = await prisma.utilisateur.upsert({
     where: { id: 4 },
-    update: {},
+    update: { service_id: services['TRESO']!.id },
     create: {
       tenant_id: tenant.id,
       entreprise_id: entreprise.id,
+      service_id: services['TRESO']!.id,
       email: 'superviseur@ledgersync.demo',
       nom: 'NDIAYE',
       prenom: 'Cheikh',
@@ -173,10 +214,11 @@ async function main() {
   const managerHash = await bcrypt.hash('Manager@2026!', 12);
   const manager = await prisma.utilisateur.upsert({
     where: { id: 5 },
-    update: {},
+    update: { service_id: services['VENTES']!.id },
     create: {
       tenant_id: tenant.id,
       entreprise_id: entreprise.id,
+      service_id: services['VENTES']!.id,
       email: 'manager@ledgersync.demo',
       nom: 'SARR',
       prenom: 'Aïssatou',
@@ -203,7 +245,7 @@ async function main() {
   }
   console.log(`✅ ${imputationCategories.length} catégories d'imputation vérifiées/créées`);
 
-  // ── Banque ─────────────────────────────────────────────────
+  // ── Banques ──────────────────────────────────────────────────
   const banque = await prisma.banque.upsert({
     where: { id: 1 },
     update: {},
@@ -219,7 +261,15 @@ async function main() {
   });
   console.log('✅ Banque created:', banque.nom);
 
-  // ── Compte Bancaire ────────────────────────────────────────
+  let ecobank = await prisma.banque.findFirst({ where: { tenant_id: tenant.id, code_swift: 'ECOCSNDA' } });
+  if (!ecobank) {
+    ecobank = await prisma.banque.create({
+      data: { tenant_id: tenant.id, code_swift: 'ECOCSNDA', nom: 'Ecobank Sénégal', pays_code: 'SN', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Banque créée/vérifiée:', ecobank.nom);
+
+  // ── Comptes Bancaires ────────────────────────────────────────
   const compte = await prisma.compteBancaire.upsert({
     where: { id: 1 },
     update: {},
@@ -237,7 +287,62 @@ async function main() {
   });
   console.log('✅ Compte Bancaire created:', compte.intitule);
 
-  // ── Période Comptable ──────────────────────────────────────
+  let compteEpargne = await prisma.compteBancaire.findFirst({ where: { entreprise_id: entreprise.id, numero_compte: 'SN28-0001-0000-0987654321' } });
+  if (!compteEpargne) {
+    compteEpargne = await prisma.compteBancaire.create({
+      data: {
+        entreprise_id: entreprise.id,
+        banque_id: banque.id,
+        numero_compte: 'SN28-0001-0000-0987654321',
+        intitule: 'Compte Épargne XOF',
+        devise: 'XOF',
+        solde_initial: 20000000,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Compte Bancaire créé/vérifié:', compteEpargne.intitule);
+
+  let compteEur = await prisma.compteBancaire.findFirst({ where: { entreprise_id: entreprise.id, numero_compte: 'SN28-0002-0000-0112233445' } });
+  if (!compteEur) {
+    compteEur = await prisma.compteBancaire.create({
+      data: {
+        entreprise_id: entreprise.id,
+        banque_id: ecobank.id,
+        numero_compte: 'SN28-0002-0000-0112233445',
+        intitule: 'Compte Opérations EUR',
+        devise: 'EUR',
+        solde_initial: 45000,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Compte Bancaire créé/vérifié:', compteEur.intitule);
+
+  // ── Template d'import Excel pour Ecobank ─────────────────────
+  const ecobankTemplate = await prisma.banqueReleveTemplate.findFirst({ where: { banque_id: ecobank.id, nom: 'Relevé standard Ecobank' } });
+  if (!ecobankTemplate) {
+    await prisma.banqueReleveTemplate.create({
+      data: {
+        banque_id: ecobank.id,
+        nom: 'Relevé standard Ecobank',
+        mapping_colonnes: { date_operation: 'Date Opération', montant: 'Montant', libelle: 'Libellé', reference: 'Référence', date_valeur: 'Date Valeur' },
+        ligne_entete: 1,
+        separateur: ';',
+        format_date: 'DD/MM/YYYY',
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Template Ecobank créé/vérifié');
+
+  // ── Périodes Comptables ──────────────────────────────────────
   const now = new Date();
   await prisma.periodeComptable.upsert({
     where: { entreprise_id_mois_annee: { entreprise_id: entreprise.id, mois: now.getMonth() + 1, annee: now.getFullYear() } },
@@ -254,7 +359,30 @@ async function main() {
   });
   console.log(`✅ Période ${now.getMonth() + 1}/${now.getFullYear()} créée`);
 
-  // ── Ecritures Comptables Demo ──────────────────────────────
+  const moisPrecedent = (offset: number) => {
+    const d = new Date(now.getFullYear(), now.getMonth() - offset, 1);
+    return { mois: d.getMonth() + 1, annee: d.getFullYear() };
+  };
+  for (const offset of [1, 2]) {
+    const { mois, annee } = moisPrecedent(offset);
+    await prisma.periodeComptable.upsert({
+      where: { entreprise_id_mois_annee: { entreprise_id: entreprise.id, mois, annee } },
+      update: {},
+      create: {
+        entreprise_id: entreprise.id,
+        mois, annee,
+        statut: 'CLOS',
+        date_cloture: new Date(annee, mois, 0),
+        clos_par: dafUser.id,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ 2 périodes clôturées créées/vérifiées');
+
+  // ── Ecritures Comptables Demo (Compte Principal XOF) ────────
   const ecrituresDemoData = [
     { reference: 'FAC-2026-001', libelle: 'Règlement fournisseur SARL TECH', montant: 1500000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 5) },
     { reference: 'REC-2026-001', libelle: 'Encaissement client ACME Corp', montant: 2800000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 8) },
@@ -286,7 +414,7 @@ async function main() {
   }
   console.log(`✅ ${ecrituresCreees}/${ecrituresDemoData.length} écritures comptables créées (déjà présentes ignorées)`);
 
-  // ── Lignes Relevé Bancaire Demo ────────────────────────────
+  // ── Lignes Relevé Bancaire Demo (Compte Principal XOF) ──────
   const relevesDemoData = [
     { reference: 'OP-001', libelle: 'VIR SARL TECH remb.', montant: 1500000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 5) },
     { reference: 'OP-002', libelle: 'Virement ACME Corp reçu', montant: 2800000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 8) },
@@ -318,7 +446,72 @@ async function main() {
   }
   console.log(`✅ ${relevesCrees}/${relevesDemoData.length} lignes de relevé créées (déjà présentes ignorées)`);
 
-  // ── Rapprochement ──────────────────────────────────────────
+  // ── Ecritures + Relevé Demo (Compte Épargne XOF) — entièrement lettré ──
+  const ecrituresEpargne = [
+    { reference: 'EPG-2026-001', libelle: 'Frais tenue de compte épargne', montant: 200000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 3) },
+    { reference: 'EPG-2026-002', libelle: 'Virement interne depuis compte principal', montant: 1000000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 10) },
+    { reference: 'EPG-2026-003', libelle: 'Intérêts trimestriels', montant: 350000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 20) },
+  ];
+  let ecrituresEpargneCreees = 0;
+  for (const e of ecrituresEpargne) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: compteEpargne.id, reference: e.reference } });
+    if (found) continue;
+    await prisma.ecritureComptable.create({
+      data: { entreprise_id: entreprise.id, compte_bancaire_id: compteEpargne.id, ...e, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear(), etat: 'VALIDE', lettree: true, lettrage_ref: `LTR-EPG-${e.reference}`, created_by: 3, updated_by: 3 },
+    });
+    ecrituresEpargneCreees++;
+  }
+
+  const relevesEpargne = [
+    { reference: 'OPE-EPG-001', libelle: 'FRAIS TENUE CPTE', montant: 200000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 3) },
+    { reference: 'OPE-EPG-002', libelle: 'VIR INTERNE CPTE PRINCIPAL', montant: 1000000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 10) },
+    { reference: 'OPE-EPG-003', libelle: 'INTERETS TRIM', montant: 350000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 20) },
+  ];
+  let relevesEpargneCrees = 0;
+  for (let i = 0; i < relevesEpargne.length; i++) {
+    const found = await prisma.releveBancaireLigne.findFirst({ where: { compte_bancaire_id: compteEpargne.id, reference: relevesEpargne[i]!.reference } });
+    if (found) continue;
+    await prisma.releveBancaireLigne.create({
+      data: { compte_bancaire_id: compteEpargne.id, ...relevesEpargne[i], num_ligne: i + 1, etat: 'VALIDE', lettree: true, lettrage_ref: `LTR-EPG-${relevesEpargne[i]!.reference}`, created_by: 3, updated_by: 3 },
+    });
+    relevesEpargneCrees++;
+  }
+  console.log(`✅ Compte Épargne : ${ecrituresEpargneCreees}/${ecrituresEpargne.length} écritures, ${relevesEpargneCrees}/${relevesEpargne.length} lignes de relevé créées (déjà présentes ignorées)`);
+
+  // ── Ecritures + Relevé Demo (Compte Opérations EUR) — rapprochement en cours avec écarts ──
+  const ecrituresEur = [
+    { reference: 'EUR-2026-001', libelle: 'Paiement fournisseur EU Logistics', montant: 3200, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 6) },
+    { reference: 'EUR-2026-002', libelle: 'Encaissement client European Partners', montant: 8500, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 14) },
+    { reference: 'EUR-2026-003', libelle: 'Frais virement SWIFT', montant: 450, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 14) },
+  ];
+  let ecrituresEurCreees = 0;
+  for (const e of ecrituresEur) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: compteEur.id, reference: e.reference } });
+    if (found) continue;
+    await prisma.ecritureComptable.create({
+      data: { entreprise_id: entreprise.id, compte_bancaire_id: compteEur.id, ...e, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear(), etat: 'VALIDE', created_by: 3, updated_by: 3 },
+    });
+    ecrituresEurCreees++;
+  }
+
+  const relevesEur = [
+    { reference: 'OPE-EUR-001', libelle: 'VIR EU LOGISTICS', montant: 3200, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 6) },
+    { reference: 'OPE-EUR-002', libelle: 'VIR EUROPEAN PARTNERS', montant: 8500, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 15) },
+    // Frais SWIFT pas encore débité côté banque (écart en attente)
+    { reference: 'OPE-EUR-003', libelle: 'COMMISSION CHANGE', montant: 120, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 20) },
+  ];
+  let relevesEurCrees = 0;
+  for (let i = 0; i < relevesEur.length; i++) {
+    const found = await prisma.releveBancaireLigne.findFirst({ where: { compte_bancaire_id: compteEur.id, reference: relevesEur[i]!.reference } });
+    if (found) continue;
+    await prisma.releveBancaireLigne.create({
+      data: { compte_bancaire_id: compteEur.id, ...relevesEur[i], num_ligne: i + 1, etat: 'VALIDE', created_by: 3, updated_by: 3 },
+    });
+    relevesEurCrees++;
+  }
+  console.log(`✅ Compte EUR : ${ecrituresEurCreees}/${ecrituresEur.length} écritures, ${relevesEurCrees}/${relevesEur.length} lignes de relevé créées (déjà présentes ignorées)`);
+
+  // ── Rapprochements ───────────────────────────────────────────
   await prisma.rapprochement.upsert({
     where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id: entreprise.id, compte_bancaire_id: compte.id, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear() } },
     update: {},
@@ -334,7 +527,44 @@ async function main() {
       updated_by: 3,
     },
   });
-  console.log('✅ Rapprochement créé');
+
+  await prisma.rapprochement.upsert({
+    where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id: entreprise.id, compte_bancaire_id: compteEpargne.id, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entreprise.id,
+      compte_bancaire_id: compteEpargne.id,
+      periode_mois: now.getMonth() + 1,
+      periode_annee: now.getFullYear(),
+      statut: 'VALIDE_FINAL',
+      montant_ecart: 0,
+      soumis_par: comptable.id,
+      valide_n1_par: superviseur.id,
+      valide_n2_par: manager.id,
+      valide_final_par: dafUser.id,
+      date_validation_final: new Date(now.getFullYear(), now.getMonth(), 27),
+      etat: 'VALIDE',
+      created_by: 3,
+      updated_by: 2,
+    },
+  });
+
+  await prisma.rapprochement.upsert({
+    where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id: entreprise.id, compte_bancaire_id: compteEur.id, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entreprise.id,
+      compte_bancaire_id: compteEur.id,
+      periode_mois: now.getMonth() + 1,
+      periode_annee: now.getFullYear(),
+      statut: 'EN_COURS',
+      montant_ecart: 570,
+      etat: 'BROUILLON',
+      created_by: 3,
+      updated_by: 3,
+    },
+  });
+  console.log('✅ 3 rapprochements créés/vérifiés (1 en cours, 1 clôturé, 1 avec écart)');
 
   console.log('\n🎉 Seed terminé avec succès!');
   console.log('\n📋 Comptes de connexion:');
@@ -343,6 +573,8 @@ async function main() {
   console.log('   Comptable   : comptable@ledgersync.demo / User@2026!');
   console.log('   Superviseur : superviseur@ledgersync.demo / Superviseur@2026!');
   console.log('   Manager     : manager@ledgersync.demo / Manager@2026!');
+  console.log('\n🏢 Hiérarchie : Siège Dakar > Direction Financière (Comptabilité, Trésorerie) / Direction Commerciale (Ventes, Marketing)');
+  console.log('🏦 Banques    : Banque de Dakar (Compte Principal + Épargne XOF), Ecobank Sénégal (Compte Opérations EUR)');
 }
 
 main()
