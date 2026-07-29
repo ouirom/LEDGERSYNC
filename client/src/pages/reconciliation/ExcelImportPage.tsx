@@ -121,8 +121,8 @@ export default function ExcelImportPage() {
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Import Relevé Bancaire — Excel</h1>
-        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 14 }}>Importer un ou plusieurs fichiers .xlsx/.csv (les pages d'un même relevé). Prévisualisez avant de valider — le traitement s'effectue ensuite en arrière-plan avec suivi temps réel.</p>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Import Relevé Bancaire</h1>
+        <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 14 }}>Importer un ou plusieurs fichiers .xlsx, .csv ou .pdf (les pages d'un même relevé). Prévisualisez avant de valider — le traitement s'effectue ensuite en arrière-plan avec suivi temps réel.</p>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
@@ -160,8 +160,8 @@ export default function ExcelImportPage() {
         >
           <FileSpreadsheet size={40} style={{ margin: '0 auto 12px', color: 'var(--primary)', opacity: 0.7 }} />
           <p style={{ fontWeight: 600, margin: '0 0 6px', fontSize: 16 }}>Déposer votre/vos fichier(s) ici</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>ou cliquer pour parcourir — .xlsx, .csv (max 50 MB/page). Un relevé peut comporter plusieurs pages : sélectionnez plusieurs fichiers.</p>
-          <input ref={fileInput} type="file" accept=".xlsx,.csv" multiple style={{ display: 'none' }} onChange={e => { if (e.target.files?.length) addFiles(e.target.files); }} />
+          <p style={{ color: 'var(--text-muted)', fontSize: 13, margin: 0 }}>ou cliquer pour parcourir — .xlsx, .csv, .pdf (max 50 MB/page). Un relevé peut comporter plusieurs pages : sélectionnez plusieurs fichiers.</p>
+          <input ref={fileInput} type="file" accept=".xlsx,.csv,.pdf" multiple style={{ display: 'none' }} onChange={e => { if (e.target.files?.length) addFiles(e.target.files); }} />
         </div>
       ) : (
         <div className="card" style={{ padding: 20 }}>
@@ -173,7 +173,7 @@ export default function ExcelImportPage() {
                 <span style={{ fontWeight: 600, fontSize: 13 }}>{files.length} page{files.length > 1 ? 's' : ''} sélectionnée{files.length > 1 ? 's' : ''}</span>
                 <div style={{ flex: 1 }} />
                 <button className="btn btn-ghost btn-sm" onClick={() => fileInput.current?.click()}><Upload size={13} /> Ajouter une page</button>
-                <input ref={fileInput} type="file" accept=".xlsx,.csv" multiple style={{ display: 'none' }} onChange={e => { if (e.target.files?.length) addFiles(e.target.files); }} />
+                <input ref={fileInput} type="file" accept=".xlsx,.csv,.pdf" multiple style={{ display: 'none' }} onChange={e => { if (e.target.files?.length) addFiles(e.target.files); }} />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {files.map((f, i) => (
@@ -196,8 +196,13 @@ export default function ExcelImportPage() {
                   Aperçu — {preview.total_lignes} lignes sur {preview.nb_pages} page{preview.nb_pages > 1 ? 's' : ''}
                 </div>
                 {preview.lignes_invalides > 0 && (
-                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--warning)' }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--danger)' }}>
                     <AlertTriangle size={12} /> {preview.lignes_invalides} ligne{preview.lignes_invalides > 1 ? 's' : ''} ignorée{preview.lignes_invalides > 1 ? 's' : ''} (date/montant illisible)
+                  </span>
+                )}
+                {preview.lignes_incertaines > 0 && (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: 'var(--warning)' }}>
+                    <AlertTriangle size={12} /> {preview.lignes_incertaines} ligne{preview.lignes_incertaines > 1 ? 's' : ''} au sens débit/crédit incertain (à vérifier)
                   </span>
                 )}
               </div>
@@ -214,9 +219,9 @@ export default function ExcelImportPage() {
                   </thead>
                   <tbody>
                     {preview.apercu.map((l, i) => (
-                      <tr key={i} style={!l.valide ? { opacity: 0.4, textDecoration: 'line-through' } : undefined}>
+                      <tr key={i} style={!l.valide ? { opacity: 0.4, textDecoration: 'line-through' } : l.incertain ? { background: 'var(--warning)10' } : undefined}>
                         <td style={{ padding: '5px 10px', whiteSpace: 'nowrap' }}>{l.date_operation ? new Date(l.date_operation).toLocaleDateString('fr-FR') : '—'}</td>
-                        <td style={{ padding: '5px 10px' }}>{l.libelle}</td>
+                        <td style={{ padding: '5px 10px' }}>{l.incertain && <AlertTriangle size={11} color="var(--warning)" style={{ verticalAlign: -1, marginRight: 4 }} />}{l.libelle}</td>
                         <td style={{ padding: '5px 10px', whiteSpace: 'nowrap' }}>{l.date_valeur ? new Date(l.date_valeur).toLocaleDateString('fr-FR') : '—'}</td>
                         <td style={{ padding: '5px 10px', textAlign: 'right', color: 'var(--danger)' }}>{l.debit !== null ? fmtMontant(l.debit) : ''}</td>
                         <td style={{ padding: '5px 10px', textAlign: 'right', color: 'var(--success)' }}>{l.credit !== null ? fmtMontant(l.credit) : ''}</td>
@@ -297,6 +302,9 @@ export default function ExcelImportPage() {
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 10 }}>
           Deux colonnes séparées <code>Debit</code>/<code>Credit</code> ou une seule colonne <code>Montant</code> signée (négatif = débit) sont acceptées.
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+          Pour un fichier <code>.pdf</code>, l'extraction est automatique (tableau détecté ou, à défaut, analyse du texte) — vérifiez toujours l'aperçu avant de valider, certaines mises en page peuvent être mal reconnues.
         </div>
       </div>
 

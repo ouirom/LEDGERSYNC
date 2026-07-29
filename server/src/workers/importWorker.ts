@@ -3,7 +3,11 @@ import { redis } from '../config/redis';
 import prisma from '../config/db';
 import { emitJobProgress, emitJobCompleted, emitJobFailed } from '../sockets/socketServer';
 import fs from 'fs';
-import { parseSourceFile, getCol, toDate, parseMontantColumns } from '../utils/statementParser';
+import { parseSourceFile, getCol, toDate, parseMontantColumns, isRowAmbiguous } from '../utils/statementParser';
+
+// Note : les lignes signalées "incertaines" par le parseur PDF (sens débit/crédit
+// non garanti, voir statementParser.ts) restent importées — le libellé porte la
+// mention d'avertissement pour rester vérifiable après coup dans le grand livre.
 
 const CHUNK_SIZE = 500;
 const IMPORT_QUEUE_NAME = 'import-queue';
@@ -68,12 +72,13 @@ export const importWorker = new Worker<ImportJobData>(
       const lignesData = chunk.map((row, idx) => {
         const { montant, type } = parseMontantColumns(row);
         const dateValeurRaw = getCol(row, 'date valeur', 'date_valeur');
+        const libelleBrut = String(getCol(row, 'libelle', 'libellé', 'description', 'motif') || 'Sans libellé');
 
         return {
           compte_bancaire_id: compteId,
           releve_bancaire_id: releveBancaireId,
           reference: String(getCol(row, 'reference', 'référence', 'ref', 'num_operation') || ''),
-          libelle: String(getCol(row, 'libelle', 'libellé', 'description', 'motif') || 'Sans libellé'),
+          libelle: isRowAmbiguous(row) ? `${libelleBrut} (sens débit/crédit incertain — à vérifier)` : libelleBrut,
           montant,
           type,
           date_operation: toDate(getCol(row, 'date', 'date_operation', 'date opération', 'date_value')),

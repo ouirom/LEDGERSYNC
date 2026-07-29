@@ -127,12 +127,14 @@ export interface PreviewLigne {
   debit: number | null;
   credit: number | null;
   valide: boolean;
+  incertain: boolean;
 }
 
 export interface ImportPreview {
   nb_pages: number;
   total_lignes: number;
   lignes_invalides: number;
+  lignes_incertaines: number;
   pages: { nom: string; nb_lignes: number }[];
   apercu: PreviewLigne[];
 }

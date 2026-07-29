@@ -26,10 +26,10 @@ const upload = multer({
     // .xls (format binaire Excel 97-2003) n'est plus accepté : la bibliothèque de lecture
     // (read-excel-file, sans vulnérabilité connue) ne supporte que le format .xlsx (OOXML) et .csv,
     // contrairement à l'ancienne dépendance xlsx/SheetJS qui présentait des failles non corrigées.
-    const allowed = ['.xlsx', '.csv'];
+    const allowed = ['.xlsx', '.csv', '.pdf'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Format non supporté. Utilisez .xlsx ou .csv (le format .xls hérité n\'est plus accepté).'));
+    else cb(new Error('Format non supporté. Utilisez .xlsx, .csv ou .pdf (le format .xls hérité n\'est plus accepté).'));
   },
 });
 
@@ -48,6 +48,7 @@ router.post('/preview', upload.array('files', 20), async (req: AuthRequest, res:
     const toutesLesLignes = pages.flatMap(p => p.lignes);
     const totalLignes = toutesLesLignes.length;
     const lignesInvalides = toutesLesLignes.filter(l => !l.valide).length;
+    const lignesIncertaines = toutesLesLignes.filter(l => l.valide && l.incertain).length;
 
     res.json({
       success: true,
@@ -55,6 +56,7 @@ router.post('/preview', upload.array('files', 20), async (req: AuthRequest, res:
         nb_pages: files.length,
         total_lignes: totalLignes,
         lignes_invalides: lignesInvalides,
+        lignes_incertaines: lignesIncertaines,
         pages: pages.map(p => ({ nom: p.nom, nb_lignes: p.nb_lignes })),
         apercu: toutesLesLignes.slice(0, 50),
       },
@@ -125,7 +127,7 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
         nom_original: f.originalname,
         nom_stockage: f.filename,
         url: `/uploads/${f.filename}`,
-        type_fichier: 'EXCEL' as const,
+        type_fichier: path.extname(f.originalname).toLowerCase() === '.pdf' ? ('PDF' as const) : ('EXCEL' as const),
         taille_octets: f.size,
         etat: 'BROUILLON' as const,
         created_by: req.user!.userId,
