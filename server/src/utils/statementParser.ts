@@ -99,63 +99,75 @@ function splitTextRowCells(line: string): string[] {
   return bySeparator.map(c => c.trim()).filter(c => c !== '');
 }
 
+// Repli texte : la ligne d'en-tête peut n'apparaître que sur la première page
+// (les pages suivantes poursuivent le même tableau sans la répéter) — on la
+// mémorise dès qu'elle est trouvée et on la réutilise pour toutes les pages
+// suivantes, tout en ignorant les répétitions éventuelles.
+function extractFromText(pages: { text: string }[]): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  let sharedHeaders: string[] | null = null;
+  let debitCreditAmbigu = false;
+  for (const page of pages) {
+    const lines = page.text.split(/\r?\n/).map(splitTextRowCells).filter(cells => cells.length >= 2);
+    const headerIdx = lines.findIndex(looksLikeHeaderRow);
+    if (headerIdx >= 0 && !sharedHeaders) {
+      sharedHeaders = lines[headerIdx]!;
+      // Une cellule vide disparaît du texte extrait au lieu de laisser un trou : si la
+      // ligne a moins de cellules que d'en-têtes, une colonne (potentiellement Débit
+      // ou Crédit) a été perdue — voir hasSeparateDebitCreditHeaders ci-dessus.
+      debitCreditAmbigu = hasSeparateDebitCreditHeaders(sharedHeaders);
+    }
+
+    lines.forEach((cells, i) => {
+      if (i === headerIdx || !cells.some(isDateCell)) return;
+      if (!sharedHeaders) { rows.push(mapPositionalRow(cells)); return; }
+      const row = zipHeaderRow(sharedHeaders, cells);
+      if (debitCreditAmbigu && cells.length < sharedHeaders.length) row['_ambigu'] = true;
+      rows.push(row);
+    });
+  }
+  return rows;
+}
+
+function extractFromTable(pages: { tables: string[][][] }[]): Record<string, unknown>[] {
+  // getTable() couvre déjà toutes les pages du PDF : on les fusionne ici pour
+  // traiter le relevé comme un tout, quel que soit son nombre de pages.
+  const allRows: string[][] = pages.flatMap(p => p.tables.flatMap(t => t));
+  if (allRows.length > 1 && looksLikeHeaderRow(allRows[0]!)) {
+    const headers = allRows[0]!.map(h => h.trim());
+    // Une page suivante peut répéter la ligne d'en-tête (mise en page qui la
+    // réimprime sur chaque page) : on l'exclut partout, pas seulement en tête.
+    return allRows.slice(1).filter(cells => !looksLikeHeaderRow(cells)).map(cells => zipHeaderRow(headers, cells));
+  }
+  if (allRows.length > 1) {
+    return allRows.map(mapPositionalRow);
+  }
+  return [];
+}
+
 // Extrait les lignes d'un relevé au format PDF, sur l'ensemble des pages du
 // fichier (un relevé PDF fait fréquemment plusieurs pages internes, en plus du
 // cas où plusieurs fichiers PDF distincts forment les pages d'un même relevé —
-// voir l'upload multi-fichiers dans releve.routes.ts). Tente d'abord la
-// détection de tableau (grille visible dans le PDF, le cas le plus fiable) sur
-// toutes les pages ; si aucun tableau n'est détecté (relevé "à plat", sans
-// bordures vectorielles — le cas le plus courant en pratique), replie sur le
-// texte brut extrait page par page, en réutilisant la ligne d'en-tête dès
-// qu'elle est repérée sur l'une des pages (elle n'est pas toujours répétée sur
-// chaque page), sinon une reconstruction positionnelle best-effort.
+// voir l'upload multi-fichiers dans releve.routes.ts).
+//
+// Priorité au texte brut (getText) plutôt qu'à la détection de tableau
+// (getTable) : testé sur un vrai relevé (Société Générale) contenant, en plus
+// du tableau d'opérations, de petits encarts sans rapport (RIB, programme de
+// fidélité...) que getTable() détecte aussi comme des "tableaux" et fusionne
+// avec le vrai tableau — au point de masquer entièrement les transactions.
+// Le texte, lui, conserve fidèlement les tabulations entre colonnes quand le
+// PDF a une mise en page tabulaire propre, ce qui est le cas le plus courant.
+// getTable() n'est utilisé qu'en dernier recours, si le texte n'a produit
+// aucune ligne exploitable (relevé scanné/image, ou mise en page atypique).
 async function parsePdfFile(filePath: string): Promise<Record<string, unknown>[]> {
   const parser = new PDFParse({ data: fs.readFileSync(filePath) });
   try {
-    // getTable() couvre déjà toutes les pages du PDF (tableResult.pages) : on les
-    // fusionne ici pour traiter le relevé comme un tout, quel que soit son
-    // nombre de pages.
-    const tableResult = await parser.getTable();
-    const allRows: string[][] = tableResult.pages.flatMap(p => p.tables.flatMap(t => t));
-
-    if (allRows.length > 1 && looksLikeHeaderRow(allRows[0]!)) {
-      const headers = allRows[0]!.map(h => h.trim());
-      // Une page suivante peut répéter la ligne d'en-tête (mise en page qui la
-      // réimprime sur chaque page) : on l'exclut partout, pas seulement en tête.
-      return allRows.slice(1).filter(cells => !looksLikeHeaderRow(cells)).map(cells => zipHeaderRow(headers, cells));
-    }
-    if (allRows.length > 1) {
-      return allRows.map(mapPositionalRow);
-    }
-
-    // Repli texte : la ligne d'en-tête peut n'apparaître que sur la première
-    // page (les pages suivantes poursuivent le même tableau sans la répéter) —
-    // on la mémorise dès qu'elle est trouvée et on la réutilise pour toutes les
-    // pages suivantes, tout en ignorant les répétitions éventuelles.
     const textResult = await parser.getText();
-    const rows: Record<string, unknown>[] = [];
-    let sharedHeaders: string[] | null = null;
-    let debitCreditAmbigu = false;
-    for (const page of textResult.pages) {
-      const lines = page.text.split(/\r?\n/).map(splitTextRowCells).filter(cells => cells.length >= 2);
-      const headerIdx = lines.findIndex(looksLikeHeaderRow);
-      if (headerIdx >= 0 && !sharedHeaders) {
-        sharedHeaders = lines[headerIdx]!;
-        // Une cellule vide disparaît du texte extrait au lieu de laisser un trou : si la
-        // ligne a moins de cellules que d'en-têtes, une colonne (potentiellement Débit
-        // ou Crédit) a été perdue — voir hasSeparateDebitCreditHeaders ci-dessus.
-        debitCreditAmbigu = hasSeparateDebitCreditHeaders(sharedHeaders);
-      }
+    const textRows = extractFromText(textResult.pages);
+    if (textRows.length > 0) return textRows;
 
-      lines.forEach((cells, i) => {
-        if (i === headerIdx || !cells.some(isDateCell)) return;
-        if (!sharedHeaders) { rows.push(mapPositionalRow(cells)); return; }
-        const row = zipHeaderRow(sharedHeaders, cells);
-        if (debitCreditAmbigu && cells.length < sharedHeaders.length) row['_ambigu'] = true;
-        rows.push(row);
-      });
-    }
-    return rows;
+    const tableResult = await parser.getTable();
+    return extractFromTable(tableResult.pages);
   } finally {
     await parser.destroy();
   }
@@ -191,15 +203,42 @@ export function getCol(row: Record<string, unknown>, ...keys: string[]): unknown
   return '';
 }
 
+// Recherche par sous-chaîne (insensible à la casse) : utile quand l'en-tête
+// réel ne correspond à aucun alias exact, par exemple "Nature de l'opération"
+// (relevés Société Générale et d'autres banques) plutôt que "Libellé".
+function getColContains(row: Record<string, unknown>, ...substrings: string[]): unknown {
+  const keys = Object.keys(row);
+  for (const s of substrings) {
+    const found = keys.find(k => k.toLowerCase().includes(s.toLowerCase()));
+    if (found !== undefined) return row[found];
+  }
+  return '';
+}
+
+// Colonne libellé/description : plusieurs intitulés réels sont utilisés selon
+// les banques ("Libellé", "Description", mais aussi "Nature de l'opération").
+export function getLibelle(row: Record<string, unknown>): string {
+  const exact = getCol(row, 'libelle', 'libellé', 'description', 'motif', 'intitule', 'intitulé');
+  if (exact !== '') return String(exact);
+  const like = getColContains(row, 'nature', 'libell', 'intitul', 'descript');
+  return String(like || 'Sans libellé');
+}
+
 // read-excel-file convertit nativement les cellules-date Excel en objets Date,
-// mais une date saisie comme texte JJ/MM/AAAA reste une chaîne. Le constructeur
-// Date() natif interprète "14/07/2026" en MM/DD/YYYY (donc invalide : mois 14),
-// d'où un parseur JJ/MM/AAAA explicite plutôt que de se fier au format US ambigu.
+// mais une date saisie comme texte JJ/MM/AAAA (ou JJ/MM/AA — les relevés
+// bancaires, notamment plus anciens, utilisent fréquemment l'année sur deux
+// chiffres) reste une chaîne. Le constructeur Date() natif interprète
+// "14/07/2026" en MM/DD/YYYY (donc invalide : mois 14), d'où un parseur
+// JJ/MM/AA(AA) explicite plutôt que de se fier au format US ambigu.
 export function toDate(v: unknown): Date {
   if (v instanceof Date) return v;
   const s = String(v || '').trim();
-  const m = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
-  if (m) return new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]));
+  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{2}|\d{4})$/);
+  if (m) {
+    let year = Number(m[3]);
+    if (m[3]!.length === 2) year += year < 50 ? 2000 : 1900;
+    return new Date(year, Number(m[2]) - 1, Number(m[1]));
+  }
   return new Date(s);
 }
 
@@ -252,9 +291,9 @@ export interface PreviewLigne {
 export function toPreviewLigne(row: Record<string, unknown>): PreviewLigne {
   const { montant, type } = parseMontantColumns(row);
   const dateOp = toDate(getCol(row, 'date', 'date_operation', 'date opération', 'date_value'));
-  const dateValeurRaw = getCol(row, 'date valeur', 'date_valeur');
+  const dateValeurRaw = getCol(row, 'date valeur', 'date_valeur', 'valeur');
   const incertain = isRowAmbiguous(row);
-  const libelleBrut = String(getCol(row, 'libelle', 'libellé', 'description', 'motif') || 'Sans libellé');
+  const libelleBrut = getLibelle(row);
   const libelle = incertain ? `${libelleBrut} (sens débit/crédit incertain — à vérifier)` : libelleBrut;
   const valide = !isNaN(montant) && montant > 0 && !isNaN(dateOp.getTime());
   return {

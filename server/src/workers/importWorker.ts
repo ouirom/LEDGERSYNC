@@ -3,7 +3,7 @@ import { redis } from '../config/redis';
 import prisma from '../config/db';
 import { emitJobProgress, emitJobCompleted, emitJobFailed } from '../sockets/socketServer';
 import fs from 'fs';
-import { parseSourceFile, getCol, toDate, parseMontantColumns, isRowAmbiguous } from '../utils/statementParser';
+import { parseSourceFile, getCol, getLibelle, toDate, parseMontantColumns, isRowAmbiguous } from '../utils/statementParser';
 
 // Note : les lignes signalées "incertaines" par le parseur PDF (sens débit/crédit
 // non garanti, voir statementParser.ts) restent importées — le libellé porte la
@@ -71,8 +71,8 @@ export const importWorker = new Worker<ImportJobData>(
 
       const lignesData = chunk.map((row, idx) => {
         const { montant, type } = parseMontantColumns(row);
-        const dateValeurRaw = getCol(row, 'date valeur', 'date_valeur');
-        const libelleBrut = String(getCol(row, 'libelle', 'libellé', 'description', 'motif') || 'Sans libellé');
+        const dateValeurRaw = getCol(row, 'date valeur', 'date_valeur', 'valeur');
+        const libelleBrut = getLibelle(row);
 
         return {
           compte_bancaire_id: compteId,
