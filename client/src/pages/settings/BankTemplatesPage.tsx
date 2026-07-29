@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileSpreadsheet, Plus, Edit3, Trash2, Save, X, AlertCircle } from 'lucide-react';
 import api from '../../api/axios';
+import type { Banque } from '../../types/api';
 
 interface BanqueTemplate {
   id: number;
@@ -23,11 +24,11 @@ const COLONNES_REQUISES = [
 
 export default function BankTemplatesPage() {
   const [templates, setTemplates] = useState<BanqueTemplate[]>([]);
-  const [banques, setBanques] = useState<any[]>([]);
+  const [banques, setBanques] = useState<Banque[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<BanqueTemplate | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{ banque_id: string; nom: string; ligne_entete: string; format_date: string; mapping: Record<string, string> }>({
     banque_id: '',
     nom: '',
     ligne_entete: '1',
@@ -90,7 +91,7 @@ export default function BankTemplatesPage() {
       nom: t.nom,
       ligne_entete: String(t.ligne_entete),
       format_date: t.format_date,
-      mapping: t.mapping_colonnes as any,
+      mapping: t.mapping_colonnes,
     });
     setShowForm(true);
   };
@@ -138,7 +139,7 @@ export default function BankTemplatesPage() {
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Banque *</label>
               <select className="select" value={form.banque_id} onChange={e => setForm(f => ({ ...f, banque_id: e.target.value }))}>
                 <option value="">— Sélectionner une banque —</option>
-                {banques.map((b: any) => <option key={b.id} value={b.id}>{b.nom}</option>)}
+                {banques.map(b => <option key={b.id} value={b.id}>{b.nom}</option>)}
               </select>
             </div>
             <div>
@@ -171,7 +172,7 @@ export default function BankTemplatesPage() {
                   <input
                     className="input"
                     placeholder={col.placeholder}
-                    value={(form.mapping as any)[col.key] || ''}
+                    value={form.mapping[col.key] || ''}
                     onChange={e => setForm(f => ({ ...f, mapping: { ...f.mapping, [col.key]: e.target.value } }))}
                     style={{ fontFamily: 'var(--font-mono)', fontSize: 13 }}
                   />

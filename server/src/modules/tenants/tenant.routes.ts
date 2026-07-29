@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
+import { isPrismaError } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate, authorize('SUPER_ADMIN', 'ADMIN_TENANT'));
@@ -22,8 +23,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const tenant = await prisma.tenant.create({ data: { ...parsed.data, etat: 'ACTIF', created_by: req.user!.userId, updated_by: req.user!.userId } });
     res.status(201).json({ success: true, data: tenant });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code tenant déjà utilisé' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code tenant déjà utilisé' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

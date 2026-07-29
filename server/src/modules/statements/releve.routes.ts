@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
+import type { Prisma } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { importQueue } from '../../workers/importWorker';
@@ -104,15 +105,15 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
-    const where: Record<string, unknown> = {
+    const where: Prisma.ReleveBancaireLigneWhereInput = {
       compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } },
       etat: { not: 'ANNULE' },
     };
-    if (compte_bancaire_id) where['compte_bancaire_id'] = parseInt(compte_bancaire_id as string);
+    if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
 
     const [data, total] = await Promise.all([
-      prisma.releveBancaireLigne.findMany({ where: where as any, skip, take: parseInt(limit as string), orderBy: { date_operation: 'desc' } }),
-      prisma.releveBancaireLigne.count({ where: where as any }),
+      prisma.releveBancaireLigne.findMany({ where, skip, take: parseInt(limit as string), orderBy: { date_operation: 'desc' } }),
+      prisma.releveBancaireLigne.count({ where }),
     ]);
 
     res.json({ success: true, data, meta: { total, page: parseInt(page as string), limit: parseInt(limit as string) } });

@@ -2,19 +2,12 @@ import { useEffect, useState } from 'react';
 import { Palette, Sun, Moon, Eye, Sliders, Save, Check } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
 import api from '../../api/axios';
-
-interface ThemeRow {
-  id: number;
-  nom: string;
-  couleur_primaire: string;
-  couleur_secondaire: string;
-  couleur_accent: string;
-  mode_sombre: boolean;
-}
+import { apiErrorMessage } from '../../utils/errors';
+import type { Entreprise, Theme as ThemeRow } from '../../types/api';
 
 export default function ThemesSettingsPage() {
   const { isDark, toggleDark, setDark, colors, setColors } = useTheme();
-  const [entreprises, setEntreprises] = useState<any[]>([]);
+  const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [selectedEnt, setSelectedEnt] = useState('');
   const [themes, setThemes] = useState<ThemeRow[]>([]);
   const [primary, setPrimary] = useState(colors.primary);
@@ -58,8 +51,8 @@ export default function ThemesSettingsPage() {
         setDark(apply.dark);
       }
       flash('success', 'Thème appliqué et enregistré pour l\'entreprise');
-    } catch (err: any) {
-      flash('error', err.response?.data?.message || 'Erreur lors de l\'application du thème');
+    } catch (err) {
+      flash('error', apiErrorMessage(err, 'Erreur lors de l\'application du thème'));
     } finally {
       setApplying(null);
     }
@@ -82,8 +75,8 @@ export default function ThemesSettingsPage() {
       });
       setThemes(prev => [...prev, created.data]);
       await assignTheme(created.data.id, { primary, accent, dark: isDark });
-    } catch (err: any) {
-      flash('error', err.response?.data?.message || 'Erreur lors de la création du thème personnalisé');
+    } catch (err) {
+      flash('error', apiErrorMessage(err, 'Erreur lors de la création du thème personnalisé'));
     } finally {
       setSaving(false);
     }
@@ -104,7 +97,7 @@ export default function ThemesSettingsPage() {
       <div className="card" style={{ padding: 20, marginBottom: 20 }}>
         <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Entreprise</label>
         <select className="select" style={{ width: '100%', maxWidth: 340 }} value={selectedEnt} onChange={e => setSelectedEnt(e.target.value)} disabled={loading}>
-          {entreprises.map((e: any) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+          {entreprises.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
         </select>
         {currentEntreprise?.theme && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>

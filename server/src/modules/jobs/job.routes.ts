@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import type { Prisma, StatutJob } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { importQueue } from '../../workers/importWorker';
@@ -12,18 +13,18 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
-    const where: Record<string, unknown> = { tenant_id: req.user!.tenantId };
-    if (statut) where['statut'] = statut;
+    const where: Prisma.JobTraitementWhereInput = { tenant_id: req.user!.tenantId };
+    if (statut) where.statut = statut as StatutJob;
 
     const [data, total] = await Promise.all([
       prisma.jobTraitement.findMany({
-        where: where as any,
+        where,
         skip,
         take: parseInt(limit as string),
         orderBy: { created_at: 'desc' },
         include: { utilisateur: { select: { nom: true, prenom: true, email: true } } },
       }),
-      prisma.jobTraitement.count({ where: where as any }),
+      prisma.jobTraitement.count({ where }),
     ]);
 
     res.json({ success: true, data, meta: { total, page: parseInt(page as string), limit: parseInt(limit as string) } });

@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
+import { isPrismaError } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate);
@@ -45,8 +46,8 @@ router.post('/', authorize('ADMIN_TENANT', 'DAF', 'MANAGER', 'SUPER_ADMIN'), asy
       data: { ...parsed.data, statut: 'OUVERT', created_by: req.user!.userId, updated_by: req.user!.userId },
     });
     res.status(201).json({ success: true, data: periode });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Période déjà existante' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Période déjà existante' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

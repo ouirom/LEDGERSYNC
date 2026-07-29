@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Check, X, Zap, AlertCircle, RefreshCw, Columns, Undo2, FileCheck2, Scale, Rows3, Columns3 } from 'lucide-react';
 import api from '../../api/axios';
 import { Link } from 'react-router-dom';
+import { apiErrorMessage } from '../../utils/errors';
+import type { Compte, ImputationCategorie, AutoMatchSuggestion } from '../../types/api';
 
 // Doit rester cohérent avec MICRO_ECART_SEUIL côté serveur (valeur par défaut si non configurée)
 const MICRO_ECART_SEUIL = 0.05;
@@ -18,7 +20,7 @@ const STATUT_LABELS: Record<string, string> = {
 const fmt = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2 });
 
 export default function ReconciliationWorkspace() {
-  const [comptes, setComptes] = useState<any[]>([]);
+  const [comptes, setComptes] = useState<Compte[]>([]);
   const [selectedCompte, setSelectedCompte] = useState('');
   const [mois, setMois] = useState(String(new Date().getMonth() + 1));
   const [annee, setAnnee] = useState(String(new Date().getFullYear()));
@@ -31,10 +33,10 @@ export default function ReconciliationWorkspace() {
   const [splitRatio, setSplitRatio] = useState(50);
   const [splitDirection, setSplitDirection] = useState<'horizontal' | 'vertical'>(() => (localStorage.getItem('workspace-split-direction') as 'horizontal' | 'vertical') || 'horizontal');
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
-  const [suggestions, setSuggestions] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<AutoMatchSuggestion[]>([]);
   const [rapprochement, setRapprochement] = useState<Rapprochement | null>(null);
   const [creatingRapp, setCreatingRapp] = useState(false);
-  const [imputations, setImputations] = useState<any[]>([]);
+  const [imputations, setImputations] = useState<ImputationCategorie[]>([]);
   const [ecartModal, setEcartModal] = useState<{ categorieId: string; motif: string } | null>(null);
   const [applyingEcart, setApplyingEcart] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -94,8 +96,8 @@ export default function ReconciliationWorkspace() {
       });
       setRapprochement(data.data);
       setMsg({ type: 'success', text: 'Rapprochement créé/mis à jour — visible dans Assistant PV & Validation' });
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la création du rapprochement' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la création du rapprochement') });
     } finally {
       setCreatingRapp(false);
       setTimeout(() => setMsg(null), 4000);
@@ -116,8 +118,8 @@ export default function ReconciliationWorkspace() {
       setMsg({ type: 'success', text: `Lettrage effectué : ${selectedE.size} écritures ↔ ${selectedR.size} lignes relevé` });
       setSelectedE(new Set()); setSelectedR(new Set());
       loadWorkspace();
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors du lettrage' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors du lettrage') });
     }
     setTimeout(() => setMsg(null), 4000);
   };
@@ -141,8 +143,8 @@ export default function ReconciliationWorkspace() {
       setSelectedE(new Set()); setSelectedR(new Set());
       setEcartModal(null);
       loadWorkspace();
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de l\'apurement' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de l\'apurement') });
     } finally {
       setApplyingEcart(false);
       setTimeout(() => setMsg(null), 4000);
@@ -157,8 +159,8 @@ export default function ReconciliationWorkspace() {
       await api.delete(`/reconciliation/lettrage/${ref}`, { data: { motif } });
       setMsg({ type: 'success', text: 'Dé-lettrage effectué avec succès' });
       loadWorkspace();
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors du dé-lettrage' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors du dé-lettrage') });
     }
     setTimeout(() => setMsg(null), 4000);
   };
@@ -221,7 +223,7 @@ export default function ReconciliationWorkspace() {
 
         <select className="select" style={{ width: 220 }} value={selectedCompte} onChange={e => setSelectedCompte(e.target.value)}>
           <option value="">— Sélectionner un compte —</option>
-          {comptes.map((c: any) => <option key={c.id} value={c.id}>{c.intitule}</option>)}
+          {comptes.map(c => <option key={c.id} value={c.id}>{c.intitule}</option>)}
         </select>
         <select className="select" style={{ width: 80 }} value={mois} onChange={e => setMois(e.target.value)}>
           {Array.from({ length: 12 }, (_, i) => <option key={i + 1} value={i + 1}>{String(i + 1).padStart(2, '0')}</option>)}
@@ -303,7 +305,7 @@ export default function ReconciliationWorkspace() {
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Catégorie d'imputation</label>
               <select className="select" style={{ width: '100%' }} value={ecartModal.categorieId} onChange={e => setEcartModal(m => m && { ...m, categorieId: e.target.value })}>
-                {imputations.map((c: any) => <option key={c.id} value={c.id}>{c.libelle} ({c.compte_imputation || c.code})</option>)}
+                {imputations.map(c => <option key={c.id} value={c.id}>{c.libelle} ({c.compte_imputation || c.code})</option>)}
               </select>
             </div>
             <div style={{ marginBottom: 16 }}>

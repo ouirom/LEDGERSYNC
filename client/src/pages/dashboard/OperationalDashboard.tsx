@@ -3,6 +3,7 @@ import { TrendingUp, TrendingDown, GitMerge, AlertTriangle, CheckCircle2, Clock,
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend } from 'recharts';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import type { Compte, JobTraitement, DashboardSummary } from '../../types/api';
 
 const MONTHS = ['Jan','Fév','Mar','Avr','Mai','Jun','Jul','Aoû','Sep','Oct','Nov','Déc'];
 
@@ -17,9 +18,9 @@ interface KPI { label: string; value: string; sub: string; icon: React.ReactNode
 
 export default function OperationalDashboard() {
   const { user } = useAuth();
-  const [comptes, setComptes] = useState<any[]>([]);
-  const [jobs, setJobs] = useState<any[]>([]);
-  const [summary, setSummary] = useState<any>(null);
+  const [comptes, setComptes] = useState<Compte[]>([]);
+  const [jobs, setJobs] = useState<JobTraitement[]>([]);
+  const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -152,7 +153,7 @@ export default function OperationalDashboard() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {comptes.slice(0, 5).map((c: any) => (
+              {comptes.slice(0, 5).map(c => (
                 <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <div style={{ width: 36, height: 36, borderRadius: 8, background: 'var(--primary)18', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <GitMerge size={16} color="var(--primary)" />
@@ -182,7 +183,7 @@ export default function OperationalDashboard() {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {jobs.map((j: any) => (
+              {jobs.map(j => (
                 <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--bg)', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{j.nom_fichier || j.type_job}</div>

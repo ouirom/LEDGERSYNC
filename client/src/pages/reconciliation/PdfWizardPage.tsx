@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FileText, ChevronRight, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import { apiErrorMessage } from '../../utils/errors';
 
 const VALIDATOR_ROLES = ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'];
 
@@ -81,9 +82,8 @@ export default function PdfWizardPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
       setMsg({ type: 'success', text: 'PV généré et téléchargé avec succès !' });
-    } catch (err: any) {
-      const msg = err.response?.data?.message || 'Erreur lors de la génération du PV PDF';
-      setMsg({ type: 'error', text: msg });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la génération du PV PDF') });
     } finally {
       setGenerating(false);
       setTimeout(() => setMsg(null), 4000);
@@ -95,8 +95,8 @@ export default function PdfWizardPage() {
       await api.post('/reconciliation/submit', { rapprochement_id: rapp.id });
       setMsg({ type: 'success', text: 'Rapprochement soumis pour validation !' });
       refreshList(rapp.id);
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la soumission' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la soumission') });
     }
     setTimeout(() => setMsg(null), 4000);
   };
@@ -107,8 +107,8 @@ export default function PdfWizardPage() {
       await api.post(`/reconciliation/${rapp.id}/${path}`);
       setMsg({ type: 'success', text: successText });
       refreshList(rapp.id);
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la validation' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la validation') });
     } finally {
       setActing(false);
       setTimeout(() => setMsg(null), 4000);
@@ -124,8 +124,8 @@ export default function PdfWizardPage() {
       await api.post(`/reconciliation/${rapp.id}/reject`, { motif });
       setMsg({ type: 'success', text: 'Rapprochement rejeté' });
       refreshList(rapp.id);
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors du rejet' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors du rejet') });
     } finally {
       setActing(false);
       setTimeout(() => setMsg(null), 4000);
@@ -138,8 +138,8 @@ export default function PdfWizardPage() {
       await api.post(`/reconciliation/${rapp.id}/reopen`);
       setMsg({ type: 'success', text: 'Rapprochement réouvert en brouillon' });
       refreshList(rapp.id);
-    } catch (err: any) {
-      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la réouverture' });
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la réouverture') });
     } finally {
       setActing(false);
       setTimeout(() => setMsg(null), 4000);

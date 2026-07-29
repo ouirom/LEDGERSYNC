@@ -1,4 +1,5 @@
 import { Response, NextFunction } from 'express';
+import type { Prisma } from '@prisma/client';
 import prisma from '../config/db';
 import { AuthRequest } from './auth';
 
@@ -19,8 +20,10 @@ export const createAuditEntry = async (params: {
   entite: string;
   entiteId?: number;
   action: string;
-  avant?: object;
-  apres?: object;
+  // Snapshot libre de l'état avant/après (peut inclure des Decimal/Date issus de Prisma) —
+  // sérialisé en JSON à l'écriture ; `unknown` plutôt que `any` pour forcer un cast explicite ci-dessous.
+  avant?: unknown;
+  apres?: unknown;
   motif?: string;
   ipAddress?: string;
 }) => {
@@ -32,8 +35,8 @@ export const createAuditEntry = async (params: {
         entite: params.entite,
         entite_id: params.entiteId,
         action: params.action,
-        avant: params.avant as any,
-        apres: params.apres as any,
+        avant: params.avant as Prisma.InputJsonValue | undefined,
+        apres: params.apres as Prisma.InputJsonValue | undefined,
         motif: params.motif,
         ip_address: params.ipAddress,
         etat: 'ACTIF',

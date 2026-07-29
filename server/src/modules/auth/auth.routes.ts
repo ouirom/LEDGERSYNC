@@ -57,7 +57,7 @@ router.post('/login', async (req, res): Promise<void> => {
           utilisateur_id: undefined,
           entite: 'AUTH',
           action: 'LOGIN_FAIL',
-          apres: { email, raison: 'Utilisateur non trouvé' } as any,
+          apres: { email, raison: 'Utilisateur non trouvé' },
           ip_address: ipAddress,
           etat: 'ACTIF',
           created_by: undefined,

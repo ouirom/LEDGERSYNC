@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../api/axios';
 import { useTheme } from './ThemeContext';
+import type { Theme } from '../types/api';
 
 interface User {
   id: number;
@@ -12,6 +13,13 @@ interface User {
   tenantCode?: string;
   entrepriseId?: number;
   entrepriseNom?: string;
+}
+
+// Forme renvoyée par GET /auth/me (plus riche que le User stocké en contexte,
+// utilisée seulement pour extraire le thème de l'entreprise/tenant à la connexion)
+interface MeResponseUser {
+  entreprise?: { theme?: Theme | null } | null;
+  tenant?: { theme?: Theme | null } | null;
 }
 
 interface AuthContextType {
@@ -31,7 +39,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const { setColors } = useTheme();
 
   // Injection dynamique des couleurs de l'entreprise (fallback: thème du tenant)
-  const applyEntrepriseTheme = useCallback((rawUser: any) => {
+  const applyEntrepriseTheme = useCallback((rawUser: MeResponseUser) => {
     const theme = rawUser?.entreprise?.theme || rawUser?.tenant?.theme;
     if (theme) {
       setColors({ primary: theme.couleur_primaire, accent: theme.couleur_accent });

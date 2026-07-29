@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Lock, Unlock, Plus, AlertTriangle, AlertCircle } from 'lucide-react';
 import api from '../../api/axios';
+import { apiErrorMessage } from '../../utils/errors';
+import type { Entreprise, Periode } from '../../types/api';
 
 const STATUT_MAP: Record<string, { label: string; badge: string; icon: React.ReactNode }> = {
   OUVERT: { label: 'Ouvert', badge: 'badge-success', icon: <Unlock size={12} /> },
@@ -11,8 +13,8 @@ const STATUT_MAP: Record<string, { label: string; badge: string; icon: React.Rea
 const MOIS_NOMS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
 export default function PeriodsSettingsPage() {
-  const [periodes, setPeriodes] = useState<any[]>([]);
-  const [entreprises, setEntreprises] = useState<any[]>([]);
+  const [periodes, setPeriodes] = useState<Periode[]>([]);
+  const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [selectedEnt, setSelectedEnt] = useState('');
   const [selectedAnnee, setSelectedAnnee] = useState(String(new Date().getFullYear()));
   const [loading, setLoading] = useState(false);
@@ -35,8 +37,8 @@ export default function PeriodsSettingsPage() {
     try {
       await api.patch(`/periods/${id}/lock`, { statut });
       api.get(`/periods?entreprise_id=${selectedEnt}&annee=${selectedAnnee}`).then(r => setPeriodes(r.data.data || []));
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors du changement de statut de la période');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors du changement de statut de la période'));
     }
   };
 
@@ -46,8 +48,8 @@ export default function PeriodsSettingsPage() {
       await api.post('/periods', { entreprise_id: parseInt(selectedEnt), mois: parseInt(newMois), annee: parseInt(selectedAnnee) });
       setShowCreate(false);
       api.get(`/periods?entreprise_id=${selectedEnt}&annee=${selectedAnnee}`).then(r => setPeriodes(r.data.data || []));
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors de la création de la période');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de la création de la période'));
     }
   };
 
@@ -67,7 +69,7 @@ export default function PeriodsSettingsPage() {
       {/* Filters */}
       <div style={{ display: 'flex', gap: 10, marginBottom: 16 }}>
         <select className="select" style={{ width: 220 }} value={selectedEnt} onChange={e => setSelectedEnt(e.target.value)}>
-          {entreprises.map((e: any) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+          {entreprises.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
         </select>
         <select className="select" style={{ width: 100 }} value={selectedAnnee} onChange={e => setSelectedAnnee(e.target.value)}>
           {annees.map(a => <option key={a} value={a}>{a}</option>)}

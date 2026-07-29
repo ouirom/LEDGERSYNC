@@ -3,6 +3,10 @@ import { Server as SocketServer, Socket } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import { JwtPayload } from '../middleware/auth';
 
+interface AuthenticatedSocket extends Socket {
+  user: JwtPayload;
+}
+
 let io: SocketServer;
 
 export const initSocketIO = (httpServer: HttpServer): void => {
@@ -21,7 +25,7 @@ export const initSocketIO = (httpServer: HttpServer): void => {
 
     try {
       const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
-      (socket as any).user = decoded;
+      (socket as AuthenticatedSocket).user = decoded;
       next();
     } catch {
       next(new Error('Invalid token'));
@@ -29,7 +33,7 @@ export const initSocketIO = (httpServer: HttpServer): void => {
   });
 
   io.on('connection', (socket: Socket) => {
-    const user = (socket as any).user as JwtPayload;
+    const user = (socket as AuthenticatedSocket).user;
     console.log(`[Socket.IO] User ${user.email} connected (${socket.id})`);
 
     // Join tenant room for broadcast

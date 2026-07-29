@@ -10,6 +10,7 @@ import {
 } from 'recharts';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import type { Entreprise } from '../../types/api';
 
 const MONTHS = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul'];
 const COLORS = ['#0f3460', '#e94560', '#10b981', '#f59e0b', '#3b82f6', '#8b5cf6'];
@@ -37,7 +38,7 @@ const MOCK_PIE = [
 
 export default function ExecutiveDashboard() {
   const { user } = useAuth();
-  const [entreprises, setEntreprises] = useState<any[]>([]);
+  const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -182,7 +183,7 @@ export default function ExecutiveDashboard() {
                 </tr>
               </thead>
               <tbody>
-                {entreprises.map((e: any, i: number) => (
+                {entreprises.map((e, i) => (
                   <tr key={e.id}>
                     <td style={{ fontWeight: 600 }}>{e.nom}</td>
                     <td><code style={{ fontSize: 11, background: 'var(--bg)', padding: '2px 6px', borderRadius: 4 }}>{e.code}</code></td>

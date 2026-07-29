@@ -3,6 +3,8 @@ import { Upload, FileSpreadsheet, X, Loader2, ExternalLink } from 'lucide-react'
 import { readSheet } from 'read-excel-file/browser';
 import api from '../../api/axios';
 import { useSocket } from '../../contexts/SocketContext';
+import { apiErrorMessage } from '../../utils/errors';
+import type { Compte } from '../../types/api';
 
 function parseCsvPreview(text: string): { headers: string[]; rows: Record<string, unknown>[] } {
   const lines = text.split(/\r\n|\n|\r/).filter(l => l.length > 0).slice(0, 6);
@@ -23,7 +25,7 @@ interface JobProgress { progression: number; lignesTraitees: number; totalLignes
 
 export default function ExcelImportPage() {
   const { socket, subscribeJob, unsubscribeJob } = useSocket();
-  const [comptes, setComptes] = useState<any[]>([]);
+  const [comptes, setComptes] = useState<Compte[]>([]);
   const [selectedCompte, setSelectedCompte] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<Record<string, unknown>[]>([]);
@@ -101,8 +103,8 @@ export default function ExcelImportPage() {
       const { data } = await api.post('/releves/import', form, { headers: { 'Content-Type': 'multipart/form-data' } });
       setJobId(String(data.data.jobId));
       setProgress({ progression: 0, lignesTraitees: 0, totalLignes: preview.length > 0 ? preview.length : 100, statut: 'EN_ATTENTE' });
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Erreur lors de l\'upload');
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Erreur lors de l\'upload'));
     } finally {
       setUploading(false);
     }
@@ -122,7 +124,7 @@ export default function ExcelImportPage() {
           <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Compte bancaire *</label>
           <select className="select" value={selectedCompte} onChange={e => setSelectedCompte(e.target.value)}>
             <option value="">— Sélectionner —</option>
-            {comptes.map((c: any) => <option key={c.id} value={c.id}>{c.intitule} — {c.banque?.nom}</option>)}
+            {comptes.map(c => <option key={c.id} value={c.id}>{c.intitule} — {c.banque?.nom}</option>)}
           </select>
         </div>
       </div>

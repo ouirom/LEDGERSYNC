@@ -56,7 +56,7 @@ router.post('/templates', async (req: AuthRequest, res: Response): Promise<void>
       },
     });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
+  } catch {
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

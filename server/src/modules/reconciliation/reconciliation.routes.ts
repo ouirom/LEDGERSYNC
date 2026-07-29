@@ -1,9 +1,11 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import type { Rapprochement, StatutRapprochement, Prisma } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { getIO } from '../../sockets/socketServer';
+import { errorMessage } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate);
@@ -164,8 +166,8 @@ router.post('/lettrage', async (req: AuthRequest, res: Response): Promise<void> 
     });
 
     res.status(201).json({ success: true, data: result });
-  } catch (err: any) {
-    res.status(422).json({ success: false, message: err.message || 'Erreur lors du lettrage' });
+  } catch (err) {
+    res.status(422).json({ success: false, message: errorMessage(err, 'Erreur lors du lettrage') });
   }
 });
 
@@ -253,8 +255,8 @@ router.post('/ecart', async (req: AuthRequest, res: Response): Promise<void> => 
     io.to(`tenant-${req.user!.tenantId}`).emit('lettrage:created', { lettrageRef: result.lettrageRef, compteId: compte_bancaire_id, periode: { mois: periode_mois, annee: periode_annee } });
 
     res.status(201).json({ success: true, data: result });
-  } catch (err: any) {
-    res.status(422).json({ success: false, message: err.message || 'Erreur lors de l\'apurement de l\'écart' });
+  } catch (err) {
+    res.status(422).json({ success: false, message: errorMessage(err, 'Erreur lors de l\'apurement de l\'écart') });
   }
 });
 
@@ -473,7 +475,9 @@ router.post('/submit', async (req: AuthRequest, res: Response): Promise<void> =>
 // À chaque étape, la personne qui valide ne peut pas être celle qui a créé,
 // soumis ou validé le niveau précédent (séparation des fonctions).
 const VALIDATION_STEPS: Array<{
-  path: string; fromStatut: string; toStatut: string; roles: string[]; priorActors: (r: any) => (number | null | undefined)[]; setField: string;
+  path: string; fromStatut: StatutRapprochement; toStatut: StatutRapprochement; roles: string[];
+  priorActors: (r: Rapprochement) => (number | null | undefined)[];
+  setField: 'valide_n1_par' | 'valide_n2_par' | 'valide_final_par';
 }> = [
   { path: 'validate-n1', fromStatut: 'SOUMIS', toStatut: 'VALIDE_N1', roles: ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'], priorActors: r => [r.created_by, r.soumis_par], setField: 'valide_n1_par' },
   { path: 'validate-n2', fromStatut: 'VALIDE_N1', toStatut: 'VALIDE_N2', roles: ['MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'], priorActors: r => [r.created_by, r.soumis_par, r.valide_n1_par], setField: 'valide_n2_par' },
@@ -498,15 +502,14 @@ for (const step of VALIDATION_STEPS) {
         return;
       }
 
-      const updated = await prisma.rapprochement.update({
-        where: { id },
-        data: {
-          statut: step.toStatut as any,
-          [step.setField]: req.user!.userId,
-          updated_by: req.user!.userId,
-          ...(step.toStatut === 'VALIDE_FINAL' ? { date_validation_final: new Date() } : {}),
-        },
-      });
+      const data: Prisma.RapprochementUpdateInput = {
+        statut: step.toStatut,
+        updated_by: req.user!.userId,
+        ...(step.toStatut === 'VALIDE_FINAL' ? { date_validation_final: new Date() } : {}),
+      };
+      (data as Record<string, unknown>)[step.setField] = req.user!.userId;
+
+      const updated = await prisma.rapprochement.update({ where: { id }, data });
 
       await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: id, action: step.toStatut, avant: { statut: rapprochement.statut }, apres: { statut: step.toStatut }, ipAddress: req.ip });
 
@@ -582,7 +585,7 @@ router.get('/list', async (req: AuthRequest, res: Response): Promise<void> => {
     const rapprochements = await prisma.rapprochement.findMany({
       where: {
         entreprise: { tenant_id: req.user!.tenantId },
-        ...(statut ? { statut: statut as any } : {}),
+        ...(statut ? { statut: statut as StatutRapprochement } : {}),
       },
       include: {
         entreprise: { select: { id: true, nom: true, code: true } },

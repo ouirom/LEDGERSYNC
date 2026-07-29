@@ -1,9 +1,10 @@
 import { Fragment, useEffect, useState } from 'react';
 import { Search, Download, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import api from '../../api/axios';
+import type { AuditLog } from '../../types/api';
 
 export default function AuditTrailPage() {
-  const [logs, setLogs] = useState<any[]>([]);
+  const [logs, setLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState({ entite: '', action: '', date_debut: '', date_fin: '' });
   const [page, setPage] = useState(1);
@@ -86,7 +87,7 @@ export default function AuditTrailPage() {
               <tr><td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
                 {loading ? 'Chargement...' : 'Aucune entrée d\'audit'}
               </td></tr>
-            ) : logs.map((l: any) => {
+            ) : logs.map(l => {
               const hasDiff = l.avant || l.apres;
               const expanded = expandedId === l.id;
               return (

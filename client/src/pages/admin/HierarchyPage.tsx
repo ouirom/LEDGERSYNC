@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Building2, Users, ChevronRight, ChevronDown, Plus, Shield, Briefcase, User, Edit3, Trash2, X, Save } from 'lucide-react';
 import api from '../../api/axios';
+import { apiErrorMessage } from '../../utils/errors';
+import type { Entreprise, Utilisateur } from '../../types/api';
 
 type NodeType = 'entreprise' | 'succursale' | 'sous_succursale' | 'direction' | 'service';
 
@@ -142,8 +144,8 @@ function TreeNode({ node, depth = 0, onAddChild, onEdit, onDelete }: {
 }
 
 export default function HierarchyPage() {
-  const [entreprises, setEntreprises] = useState<any[]>([]);
-  const [utilisateurs, setUtilisateurs] = useState<any[]>([]);
+  const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
+  const [utilisateurs, setUtilisateurs] = useState<Utilisateur[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'structure' | 'users'>('structure');
   const [modal, setModal] = useState<ModalState | null>(null);
@@ -171,21 +173,21 @@ export default function HierarchyPage() {
       code: e.code,
       type: 'entreprise' as const,
       etat: e.etat,
-      children: (e.succursales || []).map((s: any) => ({
+      children: (e.succursales || []).map(s => ({
         id: s.id,
         nom: s.nom,
         code: s.code,
         type: 'succursale' as const,
         etat: s.etat,
         children: [
-          ...(s.sous_succursales || []).map((ss: any) => ({ id: ss.id, nom: ss.nom, code: ss.code, type: 'sous_succursale' as const, etat: ss.etat })),
-          ...(s.directions || []).map((d: any) => ({
+          ...(s.sous_succursales || []).map(ss => ({ id: ss.id, nom: ss.nom, code: ss.code, type: 'sous_succursale' as const, etat: ss.etat })),
+          ...(s.directions || []).map(d => ({
             id: d.id,
             nom: d.nom,
             code: d.code,
             type: 'direction' as const,
             etat: d.etat,
-            children: (d.services || []).map((svc: any) => ({
+            children: (d.services || []).map(svc => ({
               id: svc.id,
               nom: svc.nom,
               code: svc.code,
@@ -230,8 +232,8 @@ export default function HierarchyPage() {
       }
       closeModal();
       load();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors de l\'enregistrement');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de l\'enregistrement'));
     } finally {
       setSaving(false);
     }
@@ -243,14 +245,14 @@ export default function HierarchyPage() {
     try {
       await api.delete(`/hierarchy/${ENDPOINT[node.type as Exclude<NodeType, 'entreprise'>]}/${node.id}`);
       load();
-    } catch (err: any) {
-      alert(err.response?.data?.message || 'Erreur lors de l\'archivage');
+    } catch (err) {
+      alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'));
     }
   };
 
   // Options pour le bouton global "Ajouter une entité"
-  const succursaleOptions = entreprises.flatMap(e => (e.succursales || []).map((s: any) => ({ id: s.id, label: `${s.nom} (${e.nom})` })));
-  const directionOptions = entreprises.flatMap(e => (e.succursales || []).flatMap((s: any) => (s.directions || []).map((d: any) => ({ id: d.id, label: `${d.nom} (${s.nom})` }))));
+  const succursaleOptions = entreprises.flatMap(e => (e.succursales || []).map(s => ({ id: s.id, label: `${s.nom} (${e.nom})` })));
+  const directionOptions = entreprises.flatMap(e => (e.succursales || []).flatMap(s => (s.directions || []).map(d => ({ id: d.id, label: `${d.nom} (${s.nom})` }))));
 
   const globalAddTypes: Array<{ type: Exclude<NodeType, 'entreprise'>; parents: Array<{ id: number; label: string }>; parentLabel: string }> = [
     { type: 'succursale', parents: entreprises.map(e => ({ id: e.id, label: e.nom })), parentLabel: 'Entreprise' },
@@ -284,10 +286,10 @@ export default function HierarchyPage() {
 
       {/* Tabs */}
       <div style={{ display: 'flex', gap: 0, marginBottom: 20, borderBottom: '2px solid var(--border)' }}>
-        {[{ key: 'structure', label: '🏢 Structure' }, { key: 'users', label: '👥 Utilisateurs' }].map(tab => (
+        {([{ key: 'structure', label: '🏢 Structure' }, { key: 'users', label: '👥 Utilisateurs' }] as const).map(tab => (
           <button
             key={tab.key}
-            onClick={() => setActiveTab(tab.key as any)}
+            onClick={() => setActiveTab(tab.key)}
             style={{
               padding: '10px 20px', border: 'none', background: 'transparent', cursor: 'pointer',
               fontSize: 14, fontWeight: activeTab === tab.key ? 700 : 400,
@@ -353,7 +355,7 @@ export default function HierarchyPage() {
                   <Users size={32} style={{ margin: '0 auto 8px', opacity: 0.3, display: 'block' }} />
                   Aucun utilisateur trouvé
                 </td></tr>
-              ) : utilisateurs.map((u: any) => (
+              ) : utilisateurs.map(u => (
                 <tr key={u.id}>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>

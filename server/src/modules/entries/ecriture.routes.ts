@@ -1,5 +1,6 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import type { Prisma } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 
@@ -25,18 +26,18 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const { compte_bancaire_id, mois, annee, lettree, page = '1' } = req.query;
   const skip = (parseInt(page as string) - 1) * 100;
   try {
-    const where: Record<string, unknown> = {
+    const where: Prisma.EcritureComptableWhereInput = {
       entreprise: { tenant_id: req.user!.tenantId },
       etat: { not: 'ANNULE' },
     };
-    if (compte_bancaire_id) where['compte_bancaire_id'] = parseInt(compte_bancaire_id as string);
-    if (mois) where['periode_mois'] = parseInt(mois as string);
-    if (annee) where['periode_annee'] = parseInt(annee as string);
-    if (lettree !== undefined) where['lettree'] = lettree === 'true';
+    if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
+    if (mois) where.periode_mois = parseInt(mois as string);
+    if (annee) where.periode_annee = parseInt(annee as string);
+    if (lettree !== undefined) where.lettree = lettree === 'true';
 
     const [data, total] = await Promise.all([
-      prisma.ecritureComptable.findMany({ where: where as any, skip, take: 100, orderBy: { date_ecriture: 'asc' } }),
-      prisma.ecritureComptable.count({ where: where as any }),
+      prisma.ecritureComptable.findMany({ where, skip, take: 100, orderBy: { date_ecriture: 'asc' } }),
+      prisma.ecritureComptable.count({ where }),
     ]);
     res.json({ success: true, data, meta: { total, page: parseInt(page as string) } });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }

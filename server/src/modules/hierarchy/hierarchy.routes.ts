@@ -3,6 +3,7 @@ import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
+import { isPrismaError } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate, authorize('SUPER_ADMIN', 'ADMIN_TENANT'));
@@ -32,8 +33,8 @@ router.post('/succursales', async (req: AuthRequest, res: Response): Promise<voi
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'SUCCURSALE', entiteId: data.id, action: 'CREATE', apres: data, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code succursale déjà utilisé' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code succursale déjà utilisé' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });
@@ -88,8 +89,8 @@ router.post('/sous-succursales', async (req: AuthRequest, res: Response): Promis
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'SOUS_SUCCURSALE', entiteId: data.id, action: 'CREATE', apres: data, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code sous-succursale déjà utilisé' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code sous-succursale déjà utilisé' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });
@@ -141,8 +142,8 @@ router.post('/directions', async (req: AuthRequest, res: Response): Promise<void
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'DIRECTION', entiteId: data.id, action: 'CREATE', apres: data, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code direction déjà utilisé' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code direction déjà utilisé' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });
@@ -194,8 +195,8 @@ router.post('/services', async (req: AuthRequest, res: Response): Promise<void> 
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'SERVICE', entiteId: data.id, action: 'CREATE', apres: data, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code service déjà utilisé' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code service déjà utilisé' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

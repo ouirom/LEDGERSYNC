@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { GitMerge, Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-react';
+import { apiErrorMessage } from '../utils/errors';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -19,8 +20,8 @@ export default function LoginPage() {
     try {
       await login(email, password);
       navigate('/dashboard/operational');
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Identifiants invalides');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Identifiants invalides'));
     } finally {
       setLoading(false);
     }

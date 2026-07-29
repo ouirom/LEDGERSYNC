@@ -2,6 +2,11 @@ import { useEffect, useState } from 'react';
 import { RefreshCw, XCircle, RotateCcw, Clock, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import api from '../../api/axios';
 import { useSocket } from '../../contexts/SocketContext';
+import { apiErrorMessage } from '../../utils/errors';
+import type { JobTraitement } from '../../types/api';
+
+interface JobProgressEvent { jobId: number; progression: number; lignesTraitees: number; }
+interface JobDoneEvent { jobId: number; }
 
 const STATUT_CONFIG: Record<string, { label: string; badge: string; icon: React.ReactNode }> = {
   EN_ATTENTE: { label: 'En attente', badge: 'badge-gray', icon: <Clock size={12} /> },
@@ -13,7 +18,7 @@ const STATUT_CONFIG: Record<string, { label: string; badge: string; icon: React.
 
 export default function JobMonitorPage() {
   const { socket, subscribeJob } = useSocket();
-  const [jobs, setJobs] = useState<any[]>([]);
+  const [jobs, setJobs] = useState<JobTraitement[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -29,13 +34,13 @@ export default function JobMonitorPage() {
   useEffect(() => {
     if (!socket) return;
     jobs.filter(j => j.statut === 'EN_COURS').forEach(j => subscribeJob(String(j.id)));
-    socket.on('job:progress', (data: any) => {
+    socket.on('job:progress', (data: JobProgressEvent) => {
       setJobs(prev => prev.map(j => j.id === data.jobId ? { ...j, progression: data.progression, lignes_traitees: data.lignesTraitees, statut: 'EN_COURS' } : j));
     });
-    socket.on('job:completed', (data: any) => {
+    socket.on('job:completed', (data: JobDoneEvent) => {
       setJobs(prev => prev.map(j => j.id === data.jobId ? { ...j, statut: 'COMPLETE', progression: 100 } : j));
     });
-    socket.on('job:failed', (data: any) => {
+    socket.on('job:failed', (data: JobDoneEvent) => {
       setJobs(prev => prev.map(j => j.id === data.jobId ? { ...j, statut: 'ECHOUE' } : j));
     });
     return () => { socket.off('job:progress'); socket.off('job:completed'); socket.off('job:failed'); };
@@ -46,8 +51,8 @@ export default function JobMonitorPage() {
     try {
       await api.post(`/jobs/${id}/cancel`);
       loadJobs();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors de l\'annulation du job');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de l\'annulation du job'));
     }
   };
 
@@ -56,8 +61,8 @@ export default function JobMonitorPage() {
     try {
       await api.post(`/jobs/${id}/resume`);
       loadJobs();
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Erreur lors de la reprise du job');
+    } catch (err) {
+      setError(apiErrorMessage(err, 'Erreur lors de la reprise du job'));
     }
   };
 

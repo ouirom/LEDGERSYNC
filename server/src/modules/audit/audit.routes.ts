@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import type { Prisma } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 
@@ -11,12 +12,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
-    const where: Record<string, unknown> = { tenant_id: req.user!.tenantId };
-    if (entite) where['entite'] = entite;
-    if (action) where['action'] = action;
-    if (utilisateur_id) where['utilisateur_id'] = parseInt(utilisateur_id as string);
+    const where: Prisma.LogTraitementWhereInput = { tenant_id: req.user!.tenantId };
+    if (entite) where.entite = entite as string;
+    if (action) where.action = action as string;
+    if (utilisateur_id) where.utilisateur_id = parseInt(utilisateur_id as string);
     if (date_debut || date_fin) {
-      where['created_at'] = {
+      where.created_at = {
         ...(date_debut ? { gte: new Date(date_debut as string) } : {}),
         ...(date_fin ? { lte: new Date(date_fin as string) } : {}),
       };
@@ -24,12 +25,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 
     const [data, total] = await Promise.all([
       prisma.logTraitement.findMany({
-        where: where as any,
+        where,
         skip,
         take: parseInt(limit as string),
         orderBy: { created_at: 'desc' },
       }),
-      prisma.logTraitement.count({ where: where as any }),
+      prisma.logTraitement.count({ where }),
     ]);
 
     res.json({ success: true, data, meta: { total, page: parseInt(page as string), limit: parseInt(limit as string) } });

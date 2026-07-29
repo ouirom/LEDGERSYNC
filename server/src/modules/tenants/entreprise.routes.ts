@@ -2,6 +2,7 @@ import { Router, Response } from 'express';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
+import { isPrismaError } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate);
@@ -48,8 +49,8 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       },
     });
     res.status(201).json({ success: true, data });
-  } catch (err: any) {
-    if (err.code === 'P2002') { res.status(409).json({ success: false, message: 'Code entreprise déjà utilisé dans ce tenant' }); return; }
+  } catch (err) {
+    if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code entreprise déjà utilisé dans ce tenant' }); return; }
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });
