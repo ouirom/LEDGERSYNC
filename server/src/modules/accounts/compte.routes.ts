@@ -23,6 +23,13 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const { entreprise_id, banque_id, numero_compte, iban, intitule, devise, solde_initial } = req.body as Record<string, unknown>;
   try {
+    const [entreprise, banque] = await Promise.all([
+      prisma.entreprise.findFirst({ where: { id: Number(entreprise_id), tenant_id: req.user!.tenantId } }),
+      prisma.banque.findFirst({ where: { id: Number(banque_id), tenant_id: req.user!.tenantId } }),
+    ]);
+    if (!entreprise) { res.status(404).json({ success: false, message: 'Entreprise non trouvée' }); return; }
+    if (!banque) { res.status(404).json({ success: false, message: 'Banque non trouvée' }); return; }
+
     const data = await prisma.compteBancaire.create({
       data: {
         entreprise_id: Number(entreprise_id),

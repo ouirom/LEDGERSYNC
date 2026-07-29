@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import api from '../api/axios';
+import { useTheme } from './ThemeContext';
 
 interface User {
   id: number;
@@ -27,25 +28,35 @@ const AuthContext = createContext<AuthContextType | null>(null);
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
+  const { setColors } = useTheme();
+
+  // Injection dynamique des couleurs de l'entreprise (fallback: thème du tenant)
+  const applyEntrepriseTheme = useCallback((rawUser: any) => {
+    const theme = rawUser?.entreprise?.theme || rawUser?.tenant?.theme;
+    if (theme) {
+      setColors({ primary: theme.couleur_primaire, accent: theme.couleur_accent });
+    }
+  }, [setColors]);
 
   useEffect(() => {
     const token = localStorage.getItem('accessToken');
     if (token) {
       api.get('/auth/me')
-        .then(({ data }) => setUser(data.user))
+        .then(({ data }) => { setUser(data.user); applyEntrepriseTheme(data.user); })
         .catch(() => { localStorage.clear(); })
         .finally(() => setLoading(false));
     } else {
       setLoading(false);
     }
-  }, []);
+  }, [applyEntrepriseTheme]);
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await api.post('/auth/login', { email, password });
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
-  }, []);
+    api.get('/auth/me').then(({ data: me }) => applyEntrepriseTheme(me.user)).catch(() => {});
+  }, [applyEntrepriseTheme]);
 
   const logout = useCallback(() => {
     api.post('/auth/logout').finally(() => {

@@ -35,6 +35,11 @@ router.post('/', authorize('ADMIN_TENANT', 'DAF', 'MANAGER', 'SUPER_ADMIN'), asy
   const parsed = periodeSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
 
+  const entreprise = await prisma.entreprise.findFirst({
+    where: { id: parsed.data.entreprise_id, tenant_id: req.user!.tenantId },
+  });
+  if (!entreprise) { res.status(404).json({ success: false, message: 'Entreprise non trouvée' }); return; }
+
   try {
     const periode = await prisma.periodeComptable.create({
       data: { ...parsed.data, statut: 'OUVERT', created_by: req.user!.userId, updated_by: req.user!.userId },
@@ -53,9 +58,16 @@ router.patch('/:id/lock', authorize('DAF', 'MANAGER', 'SUPER_ADMIN', 'ADMIN_TENA
     res.status(400).json({ success: false, message: 'Statut invalide' }); return;
   }
 
+  const id = parseInt(req.params['id'] as string);
+
   try {
+    const existing = await prisma.periodeComptable.findFirst({
+      where: { id, entreprise: { tenant_id: req.user!.tenantId } },
+    });
+    if (!existing) { res.status(404).json({ success: false, message: 'Période non trouvée' }); return; }
+
     const periode = await prisma.periodeComptable.update({
-      where: { id: parseInt(req.params['id'] as string) },
+      where: { id },
       data: {
         statut,
         date_cloture: statut === 'CLOS' ? new Date() : null,

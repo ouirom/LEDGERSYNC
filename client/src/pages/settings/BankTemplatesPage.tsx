@@ -35,13 +35,18 @@ export default function BankTemplatesPage() {
     mapping: { date: 'Date', montant: 'Montant', libelle: 'Libelle', reference: 'Reference', date_valeur: 'Date valeur' },
   });
 
+  const loadTemplates = () => {
+    api.get('/banques/templates').then(r => setTemplates(r.data.data || [])).catch(() => setTemplates([]));
+  };
+
   useEffect(() => {
+    setLoading(true);
     Promise.all([
       api.get('/banques').catch(() => ({ data: { data: [] } })),
-    ]).then(([b]) => {
+      api.get('/banques/templates').catch(() => ({ data: { data: [] } })),
+    ]).then(([b, t]) => {
       setBanques(b.data.data || []);
-      // Mock templates pour demo
-      setTemplates([]);
+      setTemplates(t.data.data || []);
     }).finally(() => setLoading(false));
   }, []);
 
@@ -62,8 +67,19 @@ export default function BankTemplatesPage() {
       }
       setShowForm(false);
       setEditing(null);
+      loadTemplates();
     } catch {
       alert('Erreur lors de la sauvegarde du template');
+    }
+  };
+
+  const handleDelete = async (t: BanqueTemplate) => {
+    if (!confirm(`Supprimer le template "${t.nom}" ?`)) return;
+    try {
+      await api.delete(`/banques/templates/${t.id}`);
+      loadTemplates();
+    } catch {
+      alert('Erreur lors de la suppression du template');
     }
   };
 
@@ -202,7 +218,7 @@ export default function BankTemplatesPage() {
               <span className="badge badge-success">Actif</span>
               <div style={{ display: 'flex', gap: 6 }}>
                 <button className="btn btn-ghost btn-sm btn-icon" onClick={() => startEdit(t)}><Edit3 size={14} /></button>
-                <button className="btn btn-danger btn-sm btn-icon"><Trash2 size={14} /></button>
+                <button className="btn btn-danger btn-sm btn-icon" onClick={() => handleDelete(t)}><Trash2 size={14} /></button>
               </div>
             </div>
           ))}

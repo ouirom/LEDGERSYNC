@@ -56,6 +56,7 @@ router.get('/workspace', async (req: AuthRequest, res: Response): Promise<void> 
       prisma.releveBancaireLigne.findMany({
         where: {
           compte_bancaire_id: compteId,
+          compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } },
           date_operation: {
             gte: new Date(a, m - 1, 1),
             lt: new Date(a, m, 1),
@@ -104,12 +105,25 @@ router.post('/lettrage', async (req: AuthRequest, res: Response): Promise<void> 
     // Transaction ACID
     const result = await prisma.$transaction(async (tx) => {
       // Lock rows for update (via findMany with explicit select)
+      // Filtré par tenant + compte bancaire pour empêcher tout lettrage croisé entre tenants/comptes
       const ecritures = await tx.ecritureComptable.findMany({
-        where: { id: { in: ecriture_ids }, lettree: false, etat: { not: 'ANNULE' } },
+        where: {
+          id: { in: ecriture_ids },
+          lettree: false,
+          etat: { not: 'ANNULE' },
+          compte_bancaire_id,
+          entreprise: { id: entreprise_id, tenant_id: req.user!.tenantId },
+        },
       });
 
       const releves = await tx.releveBancaireLigne.findMany({
-        where: { id: { in: releve_ids }, lettree: false, etat: { not: 'ANNULE' } },
+        where: {
+          id: { in: releve_ids },
+          lettree: false,
+          etat: { not: 'ANNULE' },
+          compte_bancaire_id,
+          compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } },
+        },
       });
 
       if (ecritures.length !== ecriture_ids.length || releves.length !== releve_ids.length) {
@@ -155,6 +169,95 @@ router.post('/lettrage', async (req: AuthRequest, res: Response): Promise<void> 
   }
 });
 
+// ── POST /api/reconciliation/ecart ──────────────────────────
+// Apurement automatique d'un micro-écart (arrondi de change) sous le seuil de
+// tolérance paramétrable : crée une écriture d'imputation vers le compte dédié
+// de la catégorie choisie, puis lettre l'ensemble (transaction ACID).
+router.post('/ecart', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = ecartSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { ecriture_ids, releve_ids, entreprise_id, compte_bancaire_id, periode_mois, periode_annee, montant_ecart, imputation_categorie_id, motif } = parsed.data;
+
+  const seuil = parseFloat(process.env.MICRO_ECART_SEUIL || '0.05');
+  if (Math.abs(montant_ecart) > seuil) {
+    res.status(422).json({ success: false, message: `Écart (${montant_ecart}) supérieur au seuil de tolérance (${seuil}). L'apurement automatique est réservé aux micro-écarts.`, code: 'ECART_OUT_OF_TOLERANCE' });
+    return;
+  }
+  if (Math.abs(montant_ecart) < 0.0001) {
+    res.status(400).json({ success: false, message: 'Aucun écart à apurer' }); return;
+  }
+
+  // Vérifier verrouillage de période
+  const periode = await prisma.periodeComptable.findUnique({
+    where: { entreprise_id_mois_annee: { entreprise_id, mois: periode_mois, annee: periode_annee } },
+  });
+  if (periode && (periode.statut === 'VERROUILLE' || periode.statut === 'CLOS')) {
+    res.status(423).json({ success: false, message: `Période ${periode_mois}/${periode_annee} verrouillée`, code: 'PERIOD_LOCKED' });
+    return;
+  }
+
+  const categorie = await prisma.imputationCategorie.findFirst({
+    where: { id: imputation_categorie_id, tenant_id: req.user!.tenantId, etat: { not: 'ARCHIVE' } },
+  });
+  if (!categorie) { res.status(404).json({ success: false, message: 'Catégorie d\'imputation non trouvée' }); return; }
+
+  const lettrageRef = `APU-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+
+  try {
+    const result = await prisma.$transaction(async (tx) => {
+      const ecritures = await tx.ecritureComptable.findMany({
+        where: { id: { in: ecriture_ids }, lettree: false, etat: { not: 'ANNULE' }, compte_bancaire_id, entreprise: { id: entreprise_id, tenant_id: req.user!.tenantId } },
+      });
+      const releves = await tx.releveBancaireLigne.findMany({
+        where: { id: { in: releve_ids }, lettree: false, etat: { not: 'ANNULE' }, compte_bancaire_id, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } } },
+      });
+      if (ecritures.length !== ecriture_ids.length || releves.length !== releve_ids.length) {
+        throw new Error('Certaines écritures ou lignes de relevé sont déjà lettrées ou introuvables');
+      }
+
+      // Écriture d'imputation de l'écart vers le compte dédié de la catégorie
+      const imputation = await tx.ecritureComptable.create({
+        data: {
+          entreprise_id, compte_bancaire_id,
+          reference: `APU-${categorie.code}-${Date.now()}`,
+          libelle: `Apurement micro-écart — ${categorie.libelle}${categorie.compte_imputation ? ` (${categorie.compte_imputation})` : ''}`,
+          montant: Math.abs(montant_ecart),
+          type: categorie.type,
+          date_ecriture: new Date(),
+          piece_ref: categorie.code,
+          periode_mois, periode_annee,
+          lettree: true, lettrage_ref: lettrageRef,
+          etat: 'VALIDE',
+          created_by: req.user!.userId, updated_by: req.user!.userId,
+        },
+      });
+
+      await tx.ecritureComptable.updateMany({
+        where: { id: { in: ecriture_ids } },
+        data: { lettree: true, lettrage_ref: lettrageRef, updated_by: req.user!.userId },
+      });
+      await tx.releveBancaireLigne.updateMany({
+        where: { id: { in: releve_ids } },
+        data: { lettree: true, lettrage_ref: lettrageRef, updated_by: req.user!.userId },
+      });
+
+      return { lettrageRef, imputationId: imputation.id, ecrituresLettrees: ecritures.length, relevesLettres: releves.length };
+    });
+
+    await createAuditEntry({
+      tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'APUREMENT_ECART', action: 'CREATE',
+      apres: { ...result, montant_ecart, categorie: categorie.libelle }, motif, ipAddress: req.ip,
+    });
+
+    const io = getIO();
+    io.to(`tenant-${req.user!.tenantId}`).emit('lettrage:created', { lettrageRef: result.lettrageRef, compteId: compte_bancaire_id, periode: { mois: periode_mois, annee: periode_annee } });
+
+    res.status(201).json({ success: true, data: result });
+  } catch (err: any) {
+    res.status(422).json({ success: false, message: err.message || 'Erreur lors de l\'apurement de l\'écart' });
+  }
+});
+
 // ── DELETE /api/reconciliation/lettrage/:ref ────────────────
 // Dé-lettrage (soft) avec motif obligatoire
 router.delete('/lettrage/:ref', async (req: AuthRequest, res: Response): Promise<void> => {
@@ -166,13 +269,28 @@ router.delete('/lettrage/:ref', async (req: AuthRequest, res: Response): Promise
   const ref = req.params['ref'] as string;
 
   try {
+    // Vérifier que le lettrage appartient bien au tenant, et récupérer sa période
+    const ecritureRef = await prisma.ecritureComptable.findFirst({
+      where: { lettrage_ref: ref, entreprise: { tenant_id: req.user!.tenantId } },
+    });
+    if (!ecritureRef) { res.status(404).json({ success: false, message: 'Lettrage non trouvé' }); return; }
+
+    // Interdiction de dé-lettrer sur une période verrouillée/close
+    const periode = await prisma.periodeComptable.findUnique({
+      where: { entreprise_id_mois_annee: { entreprise_id: ecritureRef.entreprise_id, mois: ecritureRef.periode_mois, annee: ecritureRef.periode_annee } },
+    });
+    if (periode && (periode.statut === 'VERROUILLE' || periode.statut === 'CLOS')) {
+      res.status(423).json({ success: false, message: `Période ${ecritureRef.periode_mois}/${ecritureRef.periode_annee} verrouillée`, code: 'PERIOD_LOCKED' });
+      return;
+    }
+
     await prisma.$transaction(async (tx) => {
       await tx.ecritureComptable.updateMany({
-        where: { lettrage_ref: ref },
+        where: { lettrage_ref: ref, entreprise: { tenant_id: req.user!.tenantId } },
         data: { lettree: false, lettrage_ref: null, motif_annulation: motif, updated_by: req.user!.userId },
       });
       await tx.releveBancaireLigne.updateMany({
-        where: { lettrage_ref: ref },
+        where: { lettrage_ref: ref, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } } },
         data: { lettree: false, lettrage_ref: null, updated_by: req.user!.userId },
       });
     });
@@ -222,6 +340,7 @@ router.post('/auto-match', async (req: AuthRequest, res: Response): Promise<void
     const releves = await prisma.releveBancaireLigne.findMany({
       where: {
         compte_bancaire_id,
+        compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } },
         lettree: false,
         etat: { not: 'ANNULE' },
         date_operation: {
@@ -270,13 +389,67 @@ router.post('/auto-match', async (req: AuthRequest, res: Response): Promise<void
   }
 });
 
+// ── POST /api/reconciliation/rapprochement ─────────────────
+// Créer (ou mettre à jour l'écart d'un) rapprochement BROUILLON pour une période/compte donnés
+router.post('/rapprochement', async (req: AuthRequest, res: Response): Promise<void> => {
+  const schema = z.object({
+    entreprise_id: z.number().int().positive(),
+    compte_bancaire_id: z.number().int().positive(),
+    periode_mois: z.number().int().min(1).max(12),
+    periode_annee: z.number().int().min(2000),
+  });
+  const parsed = schema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { entreprise_id, compte_bancaire_id, periode_mois, periode_annee } = parsed.data;
+
+  const compte = await prisma.compteBancaire.findFirst({
+    where: { id: compte_bancaire_id, entreprise_id, entreprise: { tenant_id: req.user!.tenantId } },
+  });
+  if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé' }); return; }
+
+  try {
+    // Écart résiduel = somme des écritures non lettrées - somme des lignes de relevé non lettrées (signées)
+    const [ecrituresNonLettrees, relevesNonLettres] = await Promise.all([
+      prisma.ecritureComptable.findMany({
+        where: { compte_bancaire_id, periode_mois, periode_annee, lettree: false, etat: { not: 'ANNULE' } },
+      }),
+      prisma.releveBancaireLigne.findMany({
+        where: {
+          compte_bancaire_id, lettree: false, etat: { not: 'ANNULE' },
+          date_operation: { gte: new Date(periode_annee, periode_mois - 1, 1), lt: new Date(periode_annee, periode_mois, 1) },
+        },
+      }),
+    ]);
+    const signe = (t: string, m: number) => (t === 'CREDIT' ? m : -m);
+    const totalEcritures = ecrituresNonLettrees.reduce((s, e) => s + signe(e.type, Number(e.montant)), 0);
+    const totalReleves = relevesNonLettres.reduce((s, r) => s + signe(r.type, Number(r.montant)), 0);
+    const montant_ecart = Math.round((totalEcritures - totalReleves) * 100) / 100;
+
+    const rapprochement = await prisma.rapprochement.upsert({
+      where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id, compte_bancaire_id, periode_mois, periode_annee } },
+      update: { montant_ecart, updated_by: req.user!.userId },
+      create: {
+        entreprise_id, compte_bancaire_id, periode_mois, periode_annee,
+        montant_ecart, statut: 'BROUILLON', etat: 'BROUILLON',
+        created_by: req.user!.userId, updated_by: req.user!.userId,
+      },
+    });
+
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: rapprochement.id, action: 'CREATE', apres: rapprochement, ipAddress: req.ip });
+    res.status(201).json({ success: true, data: rapprochement });
+  } catch (err) {
+    console.error('[RECONCILIATION/RAPPROCHEMENT]', err);
+    res.status(500).json({ success: false, message: 'Erreur lors de la création du rapprochement' });
+  }
+});
+
 // ── POST /api/reconciliation/submit ────────────────────────
 // Soumettre le rapprochement pour validation dual-control
 router.post('/submit', async (req: AuthRequest, res: Response): Promise<void> => {
   const { rapprochement_id } = req.body as { rapprochement_id: number };
 
   try {
-    const rapprochement = await prisma.rapprochement.findUnique({ where: { id: rapprochement_id } });
+    const rapprochement = await prisma.rapprochement.findFirst({ where: { id: rapprochement_id, entreprise: { tenant_id: req.user!.tenantId } } });
     if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
 
     // Dual-control: le créateur ne peut pas valider
@@ -290,6 +463,111 @@ router.post('/submit', async (req: AuthRequest, res: Response): Promise<void> =>
       data: { statut: 'SOUMIS', soumis_par: req.user!.userId, updated_by: req.user!.userId },
     });
 
+    res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── Workflow de validation à double niveau (Superviseur -> Manager -> DAF) ──
+// À chaque étape, la personne qui valide ne peut pas être celle qui a créé,
+// soumis ou validé le niveau précédent (séparation des fonctions).
+const VALIDATION_STEPS: Array<{
+  path: string; fromStatut: string; toStatut: string; roles: string[]; priorActors: (r: any) => (number | null | undefined)[]; setField: string;
+}> = [
+  { path: 'validate-n1', fromStatut: 'SOUMIS', toStatut: 'VALIDE_N1', roles: ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'], priorActors: r => [r.created_by, r.soumis_par], setField: 'valide_n1_par' },
+  { path: 'validate-n2', fromStatut: 'VALIDE_N1', toStatut: 'VALIDE_N2', roles: ['MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'], priorActors: r => [r.created_by, r.soumis_par, r.valide_n1_par], setField: 'valide_n2_par' },
+  { path: 'validate-final', fromStatut: 'VALIDE_N2', toStatut: 'VALIDE_FINAL', roles: ['DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'], priorActors: r => [r.created_by, r.soumis_par, r.valide_n1_par, r.valide_n2_par], setField: 'valide_final_par' },
+];
+
+for (const step of VALIDATION_STEPS) {
+  router.post(`/:id/${step.path}`, async (req: AuthRequest, res: Response): Promise<void> => {
+    const id = parseInt(req.params['id'] as string);
+    if (!step.roles.includes(req.user!.role)) {
+      res.status(403).json({ success: false, message: 'Rôle insuffisant pour cette validation' }); return;
+    }
+
+    try {
+      const rapprochement = await prisma.rapprochement.findFirst({ where: { id, entreprise: { tenant_id: req.user!.tenantId } } });
+      if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
+      if (rapprochement.statut !== step.fromStatut) {
+        res.status(409).json({ success: false, message: `Statut actuel (${rapprochement.statut}) incompatible avec cette étape` }); return;
+      }
+      if (step.priorActors(rapprochement).includes(req.user!.userId)) {
+        res.status(403).json({ success: false, message: 'Séparation des fonctions: vous ne pouvez pas valider une étape que vous avez déjà traitée', code: 'DUAL_CONTROL_VIOLATION' });
+        return;
+      }
+
+      const updated = await prisma.rapprochement.update({
+        where: { id },
+        data: {
+          statut: step.toStatut as any,
+          [step.setField]: req.user!.userId,
+          updated_by: req.user!.userId,
+          ...(step.toStatut === 'VALIDE_FINAL' ? { date_validation_final: new Date() } : {}),
+        },
+      });
+
+      await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: id, action: step.toStatut, avant: { statut: rapprochement.statut }, apres: { statut: step.toStatut }, ipAddress: req.ip });
+
+      const io = getIO();
+      io.to(`tenant-${req.user!.tenantId}`).emit('rapprochement:updated', { id, statut: step.toStatut });
+
+      res.json({ success: true, data: updated });
+    } catch {
+      res.status(500).json({ success: false, message: 'Erreur interne' });
+    }
+  });
+}
+
+// ── POST /api/reconciliation/:id/reject ─────────────────────
+// Rejet à n'importe quelle étape de validation (motif obligatoire)
+router.post('/:id/reject', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  const { motif } = req.body as { motif: string };
+  if (!motif || motif.trim().length < 5) {
+    res.status(400).json({ success: false, message: 'Motif de rejet obligatoire (min. 5 caractères)' }); return;
+  }
+  if (!['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'].includes(req.user!.role)) {
+    res.status(403).json({ success: false, message: 'Rôle insuffisant' }); return;
+  }
+
+  try {
+    const rapprochement = await prisma.rapprochement.findFirst({ where: { id, entreprise: { tenant_id: req.user!.tenantId } } });
+    if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
+    if (!['SOUMIS', 'VALIDE_N1', 'VALIDE_N2'].includes(rapprochement.statut)) {
+      res.status(409).json({ success: false, message: `Statut actuel (${rapprochement.statut}) ne peut pas être rejeté` }); return;
+    }
+
+    const updated = await prisma.rapprochement.update({
+      where: { id },
+      data: { statut: 'REJETE', motif_rejet: motif, updated_by: req.user!.userId },
+    });
+
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: id, action: 'REJETE', avant: { statut: rapprochement.statut }, apres: { statut: 'REJETE' }, motif, ipAddress: req.ip });
+    res.json({ success: true, data: updated });
+  } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── POST /api/reconciliation/:id/reopen ─────────────────────
+// Remettre un rapprochement rejeté en brouillon pour correction
+router.post('/:id/reopen', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  try {
+    const rapprochement = await prisma.rapprochement.findFirst({ where: { id, entreprise: { tenant_id: req.user!.tenantId } } });
+    if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
+    if (rapprochement.statut !== 'REJETE') {
+      res.status(409).json({ success: false, message: 'Seul un rapprochement rejeté peut être réouvert' }); return;
+    }
+
+    const updated = await prisma.rapprochement.update({
+      where: { id },
+      data: { statut: 'BROUILLON', soumis_par: null, valide_n1_par: null, valide_n2_par: null, updated_by: req.user!.userId },
+    });
+
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: id, action: 'REOPEN', avant: { statut: 'REJETE' }, apres: { statut: 'BROUILLON' }, ipAddress: req.ip });
     res.json({ success: true, data: updated });
   } catch {
     res.status(500).json({ success: false, message: 'Erreur interne' });

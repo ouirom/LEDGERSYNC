@@ -1,35 +1,92 @@
-import { useState } from 'react';
-import { Palette, Sun, Moon, Eye, Sliders, Save } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Palette, Sun, Moon, Eye, Sliders, Save, Check } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import api from '../../api/axios';
 
-const PRESET_THEMES = [
-  { name: 'LedgerSync Classic', primary: '#0f3460', accent: '#e94560', bg: '#f0f2f8', dark: false },
-  { name: 'Midnight Finance', primary: '#1e40af', accent: '#7c3aed', bg: '#0f172a', dark: true },
-  { name: 'Emerald Banking', primary: '#065f46', accent: '#10b981', bg: '#f0fdf4', dark: false },
-  { name: 'Royal Gold', primary: '#78350f', accent: '#f59e0b', bg: '#fffbeb', dark: false },
-  { name: 'Slate Pro', primary: '#1e293b', accent: '#38bdf8', bg: '#f8fafc', dark: false },
-  { name: 'Carbon Dark', primary: '#374151', accent: '#6366f1', bg: '#111827', dark: true },
-];
+interface ThemeRow {
+  id: number;
+  nom: string;
+  couleur_primaire: string;
+  couleur_secondaire: string;
+  couleur_accent: string;
+  mode_sombre: boolean;
+}
 
 export default function ThemesSettingsPage() {
-  const { isDark, toggleDark } = useTheme();
-  const [primary, setPrimary] = useState('#0f3460');
-  const [accent, setAccent] = useState('#e94560');
-  const [saved, setSaved] = useState(false);
+  const { isDark, toggleDark, setDark, colors, setColors } = useTheme();
+  const [entreprises, setEntreprises] = useState<any[]>([]);
+  const [selectedEnt, setSelectedEnt] = useState('');
+  const [themes, setThemes] = useState<ThemeRow[]>([]);
+  const [primary, setPrimary] = useState(colors.primary);
+  const [accent, setAccent] = useState(colors.accent);
+  const [loading, setLoading] = useState(true);
+  const [applying, setApplying] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
-  const applyPreset = (theme: typeof PRESET_THEMES[0]) => {
-    setPrimary(theme.primary);
-    setAccent(theme.accent);
-    document.documentElement.style.setProperty('--primary', theme.primary);
-    document.documentElement.style.setProperty('--accent', theme.accent);
-    if (theme.dark !== isDark) toggleDark();
+  const currentEntreprise = entreprises.find(e => String(e.id) === selectedEnt);
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      api.get('/entreprises').catch(() => ({ data: { data: [] } })),
+      api.get('/themes').catch(() => ({ data: { data: [] } })),
+    ]).then(([e, t]) => {
+      setEntreprises(e.data.data || []);
+      setThemes(t.data.data || []);
+      if (e.data.data?.[0]) setSelectedEnt(String(e.data.data[0].id));
+    }).finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (currentEntreprise?.theme) {
+      setPrimary(currentEntreprise.theme.couleur_primaire);
+      setAccent(currentEntreprise.theme.couleur_accent);
+    }
+  }, [selectedEnt]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const flash = (type: 'success' | 'error', text: string) => { setMsg({ type, text }); setTimeout(() => setMsg(null), 4000); };
+
+  const assignTheme = async (themeId: number, apply?: { primary: string; accent: string; dark: boolean }) => {
+    if (!selectedEnt) return;
+    setApplying(themeId);
+    try {
+      const { data } = await api.patch(`/entreprises/${selectedEnt}/theme`, { theme_id: themeId });
+      setEntreprises(prev => prev.map(e => String(e.id) === selectedEnt ? { ...e, theme: data.data.theme } : e));
+      if (apply) {
+        setColors({ primary: apply.primary, accent: apply.accent });
+        setDark(apply.dark);
+      }
+      flash('success', 'Thème appliqué et enregistré pour l\'entreprise');
+    } catch (err: any) {
+      flash('error', err.response?.data?.message || 'Erreur lors de l\'application du thème');
+    } finally {
+      setApplying(null);
+    }
   };
 
-  const applyCustom = () => {
-    document.documentElement.style.setProperty('--primary', primary);
-    document.documentElement.style.setProperty('--accent', accent);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  const applyPreset = (theme: ThemeRow) => {
+    assignTheme(theme.id, { primary: theme.couleur_primaire, accent: theme.couleur_accent, dark: theme.mode_sombre });
+  };
+
+  const applyCustom = async () => {
+    if (!selectedEnt) return;
+    setSaving(true);
+    try {
+      const { data: created } = await api.post('/themes', {
+        nom: `Personnalisé — ${currentEntreprise?.nom || 'Entreprise'}`,
+        couleur_primaire: primary,
+        couleur_secondaire: primary,
+        couleur_accent: accent,
+        mode_sombre: isDark,
+      });
+      setThemes(prev => [...prev, created.data]);
+      await assignTheme(created.data.id, { primary, accent, dark: isDark });
+    } catch (err: any) {
+      flash('error', err.response?.data?.message || 'Erreur lors de la création du thème personnalisé');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -39,9 +96,28 @@ export default function ThemesSettingsPage() {
           <Palette size={22} color="var(--primary)" /> Thèmes & Personnalisation
         </h1>
         <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 14 }}>
-          Personnalisez les couleurs et le mode d'affichage de LedgerSync pour votre organisation.
+          Personnalisez les couleurs de LedgerSync pour votre organisation. Le thème choisi est enregistré et appliqué automatiquement à chaque connexion.
         </p>
       </div>
+
+      {/* Entreprise selector */}
+      <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+        <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 8, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Entreprise</label>
+        <select className="select" style={{ width: '100%', maxWidth: 340 }} value={selectedEnt} onChange={e => setSelectedEnt(e.target.value)} disabled={loading}>
+          {entreprises.map((e: any) => <option key={e.id} value={e.id}>{e.nom}</option>)}
+        </select>
+        {currentEntreprise?.theme && (
+          <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)' }}>
+            Thème actuel : <strong style={{ color: 'var(--text)' }}>{currentEntreprise.theme.nom}</strong>
+          </div>
+        )}
+      </div>
+
+      {msg && (
+        <div style={{ padding: '10px 14px', borderRadius: 8, marginBottom: 16, fontSize: 13, background: msg.type === 'success' ? '#d1fae5' : '#fee2e2', color: msg.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${msg.type === 'success' ? '#6ee7b7' : '#fca5a5'}` }}>
+          {msg.text}
+        </div>
+      )}
 
       {/* Mode toggle */}
       <div className="card" style={{ padding: 20, marginBottom: 20 }}>
@@ -70,25 +146,28 @@ export default function ThemesSettingsPage() {
           <Eye size={16} color="var(--primary)" /> Thèmes Prédéfinis
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-          {PRESET_THEMES.map(theme => (
-            <button
-              key={theme.name}
-              onClick={() => applyPreset(theme)}
-              style={{
-                padding: '14px 16px', borderRadius: 10, border: '2px solid var(--border)',
-                cursor: 'pointer', background: theme.bg, textAlign: 'left', transition: 'all 0.2s',
-              }}
-              onMouseEnter={e => (e.currentTarget.style.borderColor = theme.primary)}
-              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--border)')}
-            >
-              <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
-                <div style={{ width: 20, height: 20, borderRadius: '50%', background: theme.primary }} />
-                <div style={{ width: 20, height: 20, borderRadius: '50%', background: theme.accent }} />
-                {theme.dark && <div style={{ fontSize: 10, color: '#94a3b8', alignSelf: 'center' }}>🌙</div>}
-              </div>
-              <div style={{ fontSize: 12, fontWeight: 600, color: theme.dark ? '#e2e8f0' : '#1a1a2e' }}>{theme.name}</div>
-            </button>
-          ))}
+          {themes.map(theme => {
+            const isActive = currentEntreprise?.theme?.id === theme.id;
+            return (
+              <button
+                key={theme.id}
+                onClick={() => applyPreset(theme)}
+                disabled={applying === theme.id || !selectedEnt}
+                style={{
+                  padding: '14px 16px', borderRadius: 10, border: `2px solid ${isActive ? 'var(--primary)' : 'var(--border)'}`,
+                  cursor: 'pointer', background: theme.mode_sombre ? '#111827' : '#f8fafc', textAlign: 'left', transition: 'all 0.2s', position: 'relative',
+                }}
+              >
+                {isActive && <Check size={14} color="var(--primary)" style={{ position: 'absolute', top: 10, right: 10 }} />}
+                <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: theme.couleur_primaire }} />
+                  <div style={{ width: 20, height: 20, borderRadius: '50%', background: theme.couleur_accent }} />
+                  {theme.mode_sombre && <div style={{ fontSize: 10, color: '#94a3b8', alignSelf: 'center' }}>🌙</div>}
+                </div>
+                <div style={{ fontSize: 12, fontWeight: 600, color: theme.mode_sombre ? '#e2e8f0' : '#1a1a2e' }}>{theme.nom}</div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -149,8 +228,8 @@ export default function ThemesSettingsPage() {
           </div>
         </div>
 
-        <button className="btn btn-primary" onClick={applyCustom} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {saved ? <><span>✓</span> Appliqué !</> : <><Save size={15} /> Appliquer les couleurs</>}
+        <button className="btn btn-primary" onClick={applyCustom} disabled={saving || !selectedEnt} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Save size={15} /> {saving ? 'Enregistrement...' : 'Enregistrer pour cette entreprise'}
         </button>
       </div>
     </div>

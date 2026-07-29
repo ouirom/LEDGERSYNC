@@ -23,6 +23,9 @@ import reconciliationRoutes from './modules/reconciliation/reconciliation.routes
 import jobRoutes from './modules/jobs/job.routes';
 import reportRoutes from './modules/reports/report.routes';
 import auditRoutes from './modules/audit/audit.routes';
+import hierarchyRoutes from './modules/hierarchy/hierarchy.routes';
+import themeRoutes from './modules/themes/theme.routes';
+import imputationRoutes from './modules/imputations/imputation.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -75,6 +78,9 @@ app.use('/api/reconciliation', reconciliationRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/audit', auditRoutes);
+app.use('/api/hierarchy', hierarchyRoutes);
+app.use('/api/themes', themeRoutes);
+app.use('/api/imputations', imputationRoutes);
 
 // ── 404 Handler ─────────────────────────────────────────────
 app.use((_req, res) => {

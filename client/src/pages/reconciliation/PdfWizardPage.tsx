@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
-import { FileText, ChevronRight, CheckCircle2, Download, Loader2, AlertCircle, FilePen } from 'lucide-react';
+import { FileText, ChevronRight, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
 import api from '../../api/axios';
+import { useAuth } from '../../contexts/AuthContext';
+
+const VALIDATOR_ROLES = ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'];
 
 interface Rapprochement {
   id: number;
@@ -9,6 +12,8 @@ interface Rapprochement {
   statut: string;
   montant_ecart: number;
   pv_url: string | null;
+  motif_rejet?: string | null;
+  created_by?: number | null;
   compte_bancaire: { intitule: string; banque: { nom: string } };
   entreprise: { nom: string };
 }
@@ -36,11 +41,21 @@ const WORKFLOW_STEPS = [
 ];
 
 export default function PdfWizardPage() {
+  const { hasRole } = useAuth();
   const [rapprochements, setRapprochements] = useState<Rapprochement[]>([]);
   const [selected, setSelected] = useState<Rapprochement | null>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [acting, setActing] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  const refreshList = (keepSelectedId?: number) => {
+    api.get('/reconciliation/list?limit=50').then(r => {
+      const data = r.data.data || [];
+      setRapprochements(data);
+      if (keepSelectedId) setSelected(data.find((r: Rapprochement) => r.id === keepSelectedId) || null);
+    });
+  };
 
   useEffect(() => {
     api.get('/reconciliation/list?limit=50')
@@ -79,11 +94,56 @@ export default function PdfWizardPage() {
     try {
       await api.post('/reconciliation/submit', { rapprochement_id: rapp.id });
       setMsg({ type: 'success', text: 'Rapprochement soumis pour validation !' });
-      api.get('/reconciliation/list?limit=50').then(r => setRapprochements(r.data.data || []));
+      refreshList(rapp.id);
     } catch (err: any) {
       setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la soumission' });
     }
     setTimeout(() => setMsg(null), 4000);
+  };
+
+  const validateStep = async (rapp: Rapprochement, path: 'validate-n1' | 'validate-n2' | 'validate-final', successText: string) => {
+    setActing(true);
+    try {
+      await api.post(`/reconciliation/${rapp.id}/${path}`);
+      setMsg({ type: 'success', text: successText });
+      refreshList(rapp.id);
+    } catch (err: any) {
+      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la validation' });
+    } finally {
+      setActing(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
+
+  const rejectRapprochement = async (rapp: Rapprochement) => {
+    const motif = window.prompt('Motif du rejet (obligatoire, 5 caractères min.) :');
+    if (motif === null) return;
+    if (motif.trim().length < 5) { setMsg({ type: 'error', text: 'Motif trop court (5 caractères minimum)' }); setTimeout(() => setMsg(null), 4000); return; }
+    setActing(true);
+    try {
+      await api.post(`/reconciliation/${rapp.id}/reject`, { motif });
+      setMsg({ type: 'success', text: 'Rapprochement rejeté' });
+      refreshList(rapp.id);
+    } catch (err: any) {
+      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors du rejet' });
+    } finally {
+      setActing(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
+
+  const reopenRapprochement = async (rapp: Rapprochement) => {
+    setActing(true);
+    try {
+      await api.post(`/reconciliation/${rapp.id}/reopen`);
+      setMsg({ type: 'success', text: 'Rapprochement réouvert en brouillon' });
+      refreshList(rapp.id);
+    } catch (err: any) {
+      setMsg({ type: 'error', text: err.response?.data?.message || 'Erreur lors de la réouverture' });
+    } finally {
+      setActing(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
   };
 
   const getStepIndex = (statut: string) => WORKFLOW_STEPS.findIndex(s => s.key === statut);
@@ -208,17 +268,55 @@ export default function PdfWizardPage() {
             {/* Actions */}
             <div className="card" style={{ padding: 20 }}>
               <h3 style={{ margin: '0 0 12px', fontSize: 14, fontWeight: 600 }}>Actions</h3>
+
+              {selected.statut === 'REJETE' && selected.motif_rejet && (
+                <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: '#fee2e2', border: '1px solid #fca5a5', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#991b1b' }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div><strong>Motif du rejet :</strong> {selected.motif_rejet}</div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {selected.statut === 'BROUILLON' && (
                   <button className="btn btn-primary" style={{ justifyContent: 'center' }} onClick={() => submitRaprochement(selected)}>
                     <ChevronRight size={16} /> Soumettre pour validation
                   </button>
                 )}
+
+                {selected.statut === 'SOUMIS' && hasRole(...VALIDATOR_ROLES) && (
+                  <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => validateStep(selected, 'validate-n1', 'Validé au niveau Superviseur (N1)')}>
+                    <ShieldCheck size={16} /> Valider — Niveau 1 (Superviseur)
+                  </button>
+                )}
+                {selected.statut === 'VALIDE_N1' && hasRole('MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN') && (
+                  <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => validateStep(selected, 'validate-n2', 'Validé au niveau Manager (N2)')}>
+                    <ShieldCheck size={16} /> Valider — Niveau 2 (Manager)
+                  </button>
+                )}
+                {selected.statut === 'VALIDE_N2' && hasRole('DAF', 'ADMIN_TENANT', 'SUPER_ADMIN') && (
+                  <button className="btn btn-primary" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => validateStep(selected, 'validate-final', 'Validation finale effectuée (DAF)')}>
+                    <ShieldCheck size={16} /> Valider — Final (DAF)
+                  </button>
+                )}
+
+                {['SOUMIS', 'VALIDE_N1', 'VALIDE_N2'].includes(selected.statut) && hasRole(...VALIDATOR_ROLES) && (
+                  <button className="btn btn-danger" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => rejectRapprochement(selected)}>
+                    <XCircle size={16} /> Rejeter
+                  </button>
+                )}
+
+                {selected.statut === 'REJETE' && hasRole(...VALIDATOR_ROLES) && (
+                  <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => reopenRapprochement(selected)}>
+                    <RotateCcw size={16} /> Réouvrir en brouillon
+                  </button>
+                )}
+
                 <button
                   className="btn btn-accent"
                   style={{ justifyContent: 'center' }}
                   onClick={() => generatePV(selected)}
-                  disabled={generating}
+                  disabled={generating || !['VALIDE_FINAL', 'CLOS'].includes(selected.statut)}
+                  title={!['VALIDE_FINAL', 'CLOS'].includes(selected.statut) ? 'Le PV officiel nécessite la validation finale (DAF)' : undefined}
                 >
                   {generating
                     ? <><Loader2 size={16} style={{ animation: 'spin 0.8s linear infinite' }} /> Génération en cours...</>

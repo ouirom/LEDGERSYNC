@@ -31,7 +31,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
 router.get('/templates', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const data = await prisma.banqueReleveTemplate.findMany({
-      where: { banque: { tenant_id: req.user!.tenantId } },
+      where: { banque: { tenant_id: req.user!.tenantId }, etat: { not: 'ARCHIVE' } },
       include: { banque: { select: { id: true, nom: true } } },
     });
     res.json({ success: true, data });
@@ -64,9 +64,15 @@ router.post('/templates', async (req: AuthRequest, res: Response): Promise<void>
 // PUT /api/banques/templates/:id — Mettre à jour un template
 router.put('/templates/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const { nom, mapping_colonnes, ligne_entete, format_date } = req.body as Record<string, unknown>;
+  const id = parseInt(req.params['id'] as string);
   try {
+    const existing = await prisma.banqueReleveTemplate.findFirst({
+      where: { id, banque: { tenant_id: req.user!.tenantId } },
+    });
+    if (!existing) { res.status(404).json({ success: false, message: 'Template non trouvé' }); return; }
+
     const data = await prisma.banqueReleveTemplate.update({
-      where: { id: parseInt(req.params['id'] as string) },
+      where: { id },
       data: {
         nom: String(nom),
         mapping_colonnes: mapping_colonnes as object,
@@ -76,6 +82,23 @@ router.put('/templates/:id', async (req: AuthRequest, res: Response): Promise<vo
       },
     });
     res.json({ success: true, data });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// DELETE /api/banques/templates/:id — Supprimer un template (soft delete)
+router.delete('/templates/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  try {
+    const existing = await prisma.banqueReleveTemplate.findFirst({
+      where: { id, banque: { tenant_id: req.user!.tenantId } },
+    });
+    if (!existing) { res.status(404).json({ success: false, message: 'Template non trouvé' }); return; }
+
+    await prisma.banqueReleveTemplate.update({
+      where: { id },
+      data: { etat: 'ARCHIVE', updated_by: req.user!.userId },
+    });
+    res.json({ success: true, message: 'Template supprimé' });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 

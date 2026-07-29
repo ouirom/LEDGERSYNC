@@ -23,6 +23,22 @@ async function main() {
   });
   console.log('✅ Theme created:', theme.nom);
 
+  // ── Catalogue de thèmes prédéfinis ──────────────────────────
+  const presetThemes = [
+    { nom: 'Midnight Finance', couleur_primaire: '#1e40af', couleur_secondaire: '#0f172a', couleur_accent: '#7c3aed', mode_sombre: true },
+    { nom: 'Emerald Banking', couleur_primaire: '#065f46', couleur_secondaire: '#f0fdf4', couleur_accent: '#10b981', mode_sombre: false },
+    { nom: 'Royal Gold', couleur_primaire: '#78350f', couleur_secondaire: '#fffbeb', couleur_accent: '#f59e0b', mode_sombre: false },
+    { nom: 'Slate Pro', couleur_primaire: '#1e293b', couleur_secondaire: '#f8fafc', couleur_accent: '#38bdf8', mode_sombre: false },
+    { nom: 'Carbon Dark', couleur_primaire: '#374151', couleur_secondaire: '#111827', couleur_accent: '#6366f1', mode_sombre: true },
+  ];
+  for (const preset of presetThemes) {
+    const found = await prisma.theme.findFirst({ where: { nom: preset.nom } });
+    if (!found) {
+      await prisma.theme.create({ data: { ...preset, etat: 'ACTIF', created_by: null, updated_by: null } });
+    }
+  }
+  console.log(`✅ ${presetThemes.length} thèmes prédéfinis vérifiés/créés`);
+
   // ── Pays ───────────────────────────────────────────────────
   const pays = await prisma.pays.upsert({
     where: { code_iso: 'SN' },
@@ -133,6 +149,60 @@ async function main() {
   });
   console.log('✅ Comptable created:', comptable.email);
 
+  // ── Superviseur ────────────────────────────────────────────
+  const superviseurHash = await bcrypt.hash('Superviseur@2026!', 12);
+  const superviseur = await prisma.utilisateur.upsert({
+    where: { id: 4 },
+    update: {},
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entreprise.id,
+      email: 'superviseur@ledgersync.demo',
+      nom: 'NDIAYE',
+      prenom: 'Cheikh',
+      password_hash: superviseurHash,
+      role: 'SUPERVISEUR',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Superviseur created:', superviseur.email);
+
+  // ── Manager ────────────────────────────────────────────────
+  const managerHash = await bcrypt.hash('Manager@2026!', 12);
+  const manager = await prisma.utilisateur.upsert({
+    where: { id: 5 },
+    update: {},
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entreprise.id,
+      email: 'manager@ledgersync.demo',
+      nom: 'SARR',
+      prenom: 'Aïssatou',
+      password_hash: managerHash,
+      role: 'MANAGER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Manager created:', manager.email);
+
+  // ── Catégories d'imputation (apurement automatique des micro-écarts) ──
+  const imputationCategories = [
+    { code: 'FRAIS_BQ', libelle: 'Frais bancaires', type: 'DEBIT' as const, compte_imputation: '627100' },
+    { code: 'PERTE_CHG', libelle: 'Pertes de change', type: 'DEBIT' as const, compte_imputation: '666000' },
+    { code: 'GAIN_CHG', libelle: 'Gains de change', type: 'CREDIT' as const, compte_imputation: '766000' },
+  ];
+  for (const cat of imputationCategories) {
+    const found = await prisma.imputationCategorie.findFirst({ where: { tenant_id: tenant.id, code: cat.code } });
+    if (!found) {
+      await prisma.imputationCategorie.create({ data: { ...cat, tenant_id: tenant.id, etat: 'ACTIF', created_by: 1, updated_by: 1 } });
+    }
+  }
+  console.log(`✅ ${imputationCategories.length} catégories d'imputation vérifiées/créées`);
+
   // ── Banque ─────────────────────────────────────────────────
   const banque = await prisma.banque.upsert({
     where: { id: 1 },
@@ -196,7 +266,10 @@ async function main() {
     { reference: 'REC-2026-004', libelle: 'Remboursement TVA État', montant: 680000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 22) },
   ];
 
+  let ecrituresCreees = 0;
   for (const e of ecrituresDemoData) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: compte.id, reference: e.reference } });
+    if (found) continue;
     await prisma.ecritureComptable.create({
       data: {
         entreprise_id: entreprise.id,
@@ -209,8 +282,9 @@ async function main() {
         updated_by: 3,
       },
     });
+    ecrituresCreees++;
   }
-  console.log(`✅ ${ecrituresDemoData.length} écritures comptables créées`);
+  console.log(`✅ ${ecrituresCreees}/${ecrituresDemoData.length} écritures comptables créées (déjà présentes ignorées)`);
 
   // ── Lignes Relevé Bancaire Demo ────────────────────────────
   const relevesDemoData = [
@@ -226,7 +300,10 @@ async function main() {
     { reference: 'OP-009', libelle: 'FRAIS BANCAIRES GESTION', montant: 15000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 25) },
   ];
 
+  let relevesCrees = 0;
   for (let i = 0; i < relevesDemoData.length; i++) {
+    const found = await prisma.releveBancaireLigne.findFirst({ where: { compte_bancaire_id: compte.id, reference: relevesDemoData[i]!.reference } });
+    if (found) continue;
     await prisma.releveBancaireLigne.create({
       data: {
         compte_bancaire_id: compte.id,
@@ -237,8 +314,9 @@ async function main() {
         updated_by: 3,
       },
     });
+    relevesCrees++;
   }
-  console.log(`✅ ${relevesDemoData.length} lignes de relevé créées`);
+  console.log(`✅ ${relevesCrees}/${relevesDemoData.length} lignes de relevé créées (déjà présentes ignorées)`);
 
   // ── Rapprochement ──────────────────────────────────────────
   await prisma.rapprochement.upsert({
@@ -263,6 +341,8 @@ async function main() {
   console.log('   Super Admin : admin@ledgersync.demo / Admin@2026!');
   console.log('   DAF         : daf@ledgersync.demo / Daf@2026!');
   console.log('   Comptable   : comptable@ledgersync.demo / User@2026!');
+  console.log('   Superviseur : superviseur@ledgersync.demo / Superviseur@2026!');
+  console.log('   Manager     : manager@ledgersync.demo / Manager@2026!');
 }
 
 main()

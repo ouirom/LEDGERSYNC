@@ -24,6 +24,9 @@ router.get('/pv/:id', async (req: AuthRequest, res: Response): Promise<void> => 
     });
 
     if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
+    if (!['VALIDE_FINAL', 'CLOS'].includes(rapprochement.statut)) {
+      res.status(409).json({ success: false, message: 'Le PV officiel ne peut être généré qu\'après validation finale (DAF)' }); return;
+    }
 
     const ecrituresLettrees = await prisma.ecritureComptable.count({
       where: { compte_bancaire_id: rapprochement.compte_bancaire_id, lettree: true, periode_mois: rapprochement.periode_mois, periode_annee: rapprochement.periode_annee },
@@ -148,7 +151,12 @@ router.get('/pv/:id', async (req: AuthRequest, res: Response): Promise<void> => 
 
     await prisma.rapprochement.update({
       where: { id },
-      data: { pv_url: `/uploads/${pvFileName}`, updated_by: req.user!.userId },
+      data: {
+        pv_url: `/uploads/${pvFileName}`,
+        // Le PV officiel ne peut être généré qu'après validation finale (DAF) — sa génération clôt le rapprochement
+        ...(rapprochement.statut === 'VALIDE_FINAL' ? { statut: 'CLOS' } : {}),
+        updated_by: req.user!.userId,
+      },
     });
 
     res.setHeader('Content-Type', 'application/pdf');

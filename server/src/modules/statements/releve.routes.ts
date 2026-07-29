@@ -36,6 +36,9 @@ router.post('/import', upload.single('file'), async (req: AuthRequest, res: Resp
 
   try {
     // Créer le job en base
+    // Le compteId/templateId est stocké dès la création (dans `resultat`) afin que
+    // le mécanisme de reprise (resume) puisse le retrouver même si le job échoue ou est annulé
+    // avant d'atteindre son état COMPLETE (seul moment où `resultat` était renseigné auparavant).
     const jobRecord = await prisma.jobTraitement.create({
       data: {
         tenant_id: req.user!.tenantId,
@@ -43,6 +46,7 @@ router.post('/import', upload.single('file'), async (req: AuthRequest, res: Resp
         type_job: 'IMPORT_RELEVE',
         nom_fichier: req.file.originalname,
         statut: 'EN_ATTENTE',
+        resultat: { compteId: parseInt(compte_bancaire_id), templateId: template_id ? parseInt(template_id) : undefined },
         etat: 'BROUILLON',
         created_by: req.user!.userId,
         updated_by: req.user!.userId,

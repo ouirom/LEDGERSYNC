@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
 
 interface ThemeColors { primary: string; accent: string; }
 
 interface ThemeContextType {
   isDark: boolean;
   toggleDark: () => void;
+  setDark: (v: boolean) => void;
   colors: ThemeColors;
   setColors: (c: ThemeColors) => void;
 }
@@ -28,11 +29,14 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     root.style.setProperty('--accent', colors.accent);
   }, [colors]);
 
-  const toggleDark = () => setIsDark(d => !d);
-  const setColors = (c: ThemeColors) => setColorsState(c);
+  const toggleDark = useCallback(() => setIsDark(d => !d), []);
+  const setDark = useCallback((v: boolean) => setIsDark(v), []);
+  const setColors = useCallback((c: ThemeColors) => setColorsState(c), []);
+
+  const value = useMemo(() => ({ isDark, toggleDark, setDark, colors, setColors }), [isDark, toggleDark, setDark, colors, setColors]);
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleDark, colors, setColors }}>
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
