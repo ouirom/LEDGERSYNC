@@ -3,7 +3,7 @@ import { Building2, Users, ChevronRight, ChevronDown, Plus, Shield, Briefcase, U
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
 import { useAuth } from '../../contexts/AuthContext';
-import { ROLES_UTILISATEUR, type Entreprise, type Utilisateur, type RoleUtilisateur } from '../../types/api';
+import { ROLES_UTILISATEUR, type Entreprise, type Utilisateur, type RoleUtilisateur, type Pays } from '../../types/api';
 
 const ROLE_LABELS: Record<RoleUtilisateur, string> = {
   SUPER_ADMIN: 'Super Admin',
@@ -102,11 +102,12 @@ const PARENT_FIELD: Record<Exclude<NodeType, 'entreprise'>, string> = {
 
 interface ModalState {
   mode: 'add' | 'edit';
-  type: Exclude<NodeType, 'entreprise'>;
+  type: NodeType;
   parentId?: number;
   targetId?: number;
   nom: string;
   code: string;
+  pays_id?: string;
 }
 
 function TreeNode({ node, depth = 0, onAddChild, onEdit, onDelete }: {
@@ -179,6 +180,7 @@ export default function HierarchyPage() {
   const { user: currentUser, hasRole } = useAuth();
   const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [utilisateurs, setUtilisateurs] = useState<Utilisateur[]>([]);
+  const [pays, setPays] = useState<Pays[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'structure' | 'users'>('structure');
   const [modal, setModal] = useState<ModalState | null>(null);
@@ -197,9 +199,11 @@ export default function HierarchyPage() {
     Promise.all([
       api.get('/entreprises').catch(() => ({ data: { data: [] } })),
       api.get('/users').catch(() => ({ data: { data: [] } })),
-    ]).then(([e, u]) => {
+      api.get('/pays').catch(() => ({ data: { data: [] } })),
+    ]).then(([e, u, p]) => {
       setEntreprises(e.data.data || []);
       setUtilisateurs(u.data.data || []);
+      setPays(p.data.data || []);
     }).finally(() => setLoading(false));
   };
 
@@ -244,12 +248,12 @@ export default function HierarchyPage() {
 
   const openAdd = (_parentType: NodeType, parentId: number, childType: NodeType) => {
     setError(null);
-    setModal({ mode: 'add', type: childType as Exclude<NodeType, 'entreprise'>, parentId, nom: '', code: '' });
+    setModal({ mode: 'add', type: childType, parentId, nom: '', code: '' });
   };
 
   const openEdit = (node: HierarchyNode) => {
     setError(null);
-    setModal({ mode: 'edit', type: node.type as Exclude<NodeType, 'entreprise'>, targetId: node.id, nom: node.nom, code: node.code });
+    setModal({ mode: 'edit', type: node.type, targetId: node.id, nom: node.nom, code: node.code });
   };
 
   const closeModal = () => { setModal(null); setError(null); };
@@ -260,15 +264,23 @@ export default function HierarchyPage() {
     setSaving(true);
     setError(null);
     try {
-      const endpoint = ENDPOINT[modal.type];
-      if (modal.mode === 'add') {
-        await api.post(`/hierarchy/${endpoint}`, {
-          [PARENT_FIELD[modal.type]]: modal.parentId,
+      if (modal.type === 'entreprise') {
+        await api.post('/entreprises', {
           nom: modal.nom.trim(),
           code: modal.code.trim(),
+          pays_id: modal.pays_id ? parseInt(modal.pays_id) : null,
         });
       } else {
-        await api.put(`/hierarchy/${endpoint}/${modal.targetId}`, { nom: modal.nom.trim(), code: modal.code.trim() });
+        const endpoint = ENDPOINT[modal.type];
+        if (modal.mode === 'add') {
+          await api.post(`/hierarchy/${endpoint}`, {
+            [PARENT_FIELD[modal.type]]: modal.parentId,
+            nom: modal.nom.trim(),
+            code: modal.code.trim(),
+          });
+        } else {
+          await api.put(`/hierarchy/${endpoint}/${modal.targetId}`, { nom: modal.nom.trim(), code: modal.code.trim() });
+        }
       }
       closeModal();
       load();
@@ -294,7 +306,8 @@ export default function HierarchyPage() {
   const succursaleOptions = entreprises.flatMap(e => (e.succursales || []).map(s => ({ id: s.id, label: `${s.nom} (${e.nom})` })));
   const directionOptions = entreprises.flatMap(e => (e.succursales || []).flatMap(s => (s.directions || []).map(d => ({ id: d.id, label: `${d.nom} (${s.nom})` }))));
 
-  const globalAddTypes: Array<{ type: Exclude<NodeType, 'entreprise'>; parents: Array<{ id: number; label: string }>; parentLabel: string }> = [
+  const globalAddTypes: Array<{ type: NodeType; parents: Array<{ id: number; label: string }>; parentLabel: string }> = [
+    { type: 'entreprise', parents: [], parentLabel: '' },
     { type: 'succursale', parents: entreprises.map(e => ({ id: e.id, label: e.nom })), parentLabel: 'Entreprise' },
     { type: 'sous_succursale', parents: succursaleOptions, parentLabel: 'Succursale' },
     { type: 'direction', parents: succursaleOptions, parentLabel: 'Succursale' },
@@ -303,8 +316,8 @@ export default function HierarchyPage() {
 
   const openGlobalAdd = () => {
     setError(null);
-    const first = globalAddTypes.find(t => t.parents.length > 0) || globalAddTypes[0];
-    setModal({ mode: 'add', type: first.type, parentId: first.parents[0]?.id, nom: '', code: '' });
+    const first = globalAddTypes.find(t => t.type !== 'entreprise' && t.parents.length > 0) || globalAddTypes[0];
+    setModal({ mode: 'add', type: first.type, parentId: first.parents[0]?.id, nom: '', code: '', pays_id: '' });
   };
 
   const currentTypeConfig = modal ? globalAddTypes.find(t => t.type === modal.type) : undefined;
@@ -552,7 +565,7 @@ export default function HierarchyPage() {
                   className="select"
                   value={modal.type}
                   onChange={e => {
-                    const t = e.target.value as Exclude<NodeType, 'entreprise'>;
+                    const t = e.target.value as NodeType;
                     const cfg = globalAddTypes.find(g => g.type === t)!;
                     setModal(m => m && { ...m, type: t, parentId: cfg.parents[0]?.id });
                   }}
@@ -563,7 +576,7 @@ export default function HierarchyPage() {
               </div>
             )}
 
-            {modal.mode === 'add' && (
+            {modal.mode === 'add' && modal.type !== 'entreprise' && (
               <div style={{ marginBottom: 14 }}>
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
                   {currentTypeConfig?.parentLabel} parente
@@ -585,6 +598,21 @@ export default function HierarchyPage() {
               </div>
             )}
 
+            {modal.type === 'entreprise' && (
+              <div style={{ marginBottom: 14 }}>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Pays</label>
+                <select
+                  className="select"
+                  value={modal.pays_id || ''}
+                  onChange={e => setModal(m => m && { ...m, pays_id: e.target.value })}
+                  style={{ width: '100%' }}
+                >
+                  <option value="">— Non spécifié —</option>
+                  {pays.map(p => <option key={p.id} value={p.id}>{p.nom}</option>)}
+                </select>
+              </div>
+            )}
+
             <div style={{ marginBottom: 14 }}>
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Nom</label>
               <input className="input" value={modal.nom} onChange={e => setModal(m => m && { ...m, nom: e.target.value })} style={{ width: '100%' }} />
@@ -601,7 +629,7 @@ export default function HierarchyPage() {
               <button
                 className="btn btn-primary"
                 onClick={submitModal}
-                disabled={saving || (modal.mode === 'add' && !modal.parentId)}
+                disabled={saving || (modal.mode === 'add' && modal.type !== 'entreprise' && !modal.parentId)}
               >
                 <Save size={15} /> {saving ? 'Enregistrement...' : 'Enregistrer'}
               </button>

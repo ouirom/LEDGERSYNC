@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
@@ -6,6 +7,15 @@ import { isPrismaError } from '../../utils/errors';
 
 const router = Router();
 router.use(authenticate);
+
+const entrepriseCreateSchema = z.object({
+  code: z.string().min(1).max(20),
+  nom: z.string().min(1).max(200),
+  pays_id: z.number().int().positive().nullable().optional(),
+  theme_id: z.number().int().positive().nullable().optional(),
+  siret: z.string().max(50).nullable().optional(),
+  adresse: z.string().nullable().optional(),
+});
 
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
@@ -31,23 +41,28 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 
-router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { code, nom, pays_id, theme_id, siret, adresse } = req.body as Record<string, unknown>;
+router.post('/', authorize('SUPER_ADMIN', 'ADMIN_TENANT'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = entrepriseCreateSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { code, nom, pays_id, theme_id, siret, adresse } = parsed.data;
+
   try {
     const data = await prisma.entreprise.create({
       data: {
         tenant_id: req.user!.tenantId,
-        code: String(code),
-        nom: String(nom),
-        pays_id: pays_id ? Number(pays_id) : null,
-        theme_id: theme_id ? Number(theme_id) : null,
-        siret: siret ? String(siret) : null,
-        adresse: adresse ? String(adresse) : null,
+        code,
+        nom,
+        pays_id: pays_id ?? null,
+        theme_id: theme_id ?? null,
+        siret: siret ?? null,
+        adresse: adresse ?? null,
         etat: 'ACTIF',
         created_by: req.user!.userId,
         updated_by: req.user!.userId,
       },
+      include: { pays: true, theme: true },
     });
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ENTREPRISE', entiteId: data.id, action: 'CREATE', apres: { code, nom, pays_id, siret }, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
   } catch (err) {
     if (isPrismaError(err, 'P2002')) { res.status(409).json({ success: false, message: 'Code entreprise déjà utilisé dans ce tenant' }); return; }

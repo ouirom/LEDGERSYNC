@@ -46,7 +46,15 @@ export interface Entreprise {
   nom: string;
   code?: string;
   theme?: Theme | null;
+  pays?: Pays | null;
   succursales?: Succursale[];
+}
+
+export interface Pays {
+  id: number;
+  code_iso: string;
+  nom: string;
+  devise: string;
 }
 
 export interface Utilisateur {
