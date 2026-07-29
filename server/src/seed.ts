@@ -566,6 +566,211 @@ async function main() {
   });
   console.log('✅ 3 rapprochements créés/vérifiés (1 en cours, 1 clôturé, 1 avec écart)');
 
+  // ============================================================
+  // ENTREPRISE 2 : CÔTE D'IVOIRE (démonstration multi-entreprise / multi-pays)
+  // ============================================================
+
+  // ── Pays : Côte d'Ivoire ─────────────────────────────────────
+  const paysCI = await prisma.pays.upsert({
+    where: { code_iso: 'CI' },
+    update: {},
+    create: { code_iso: 'CI', nom: "Côte d'Ivoire", devise: 'XOF', etat: 'ACTIF', created_by: null, updated_by: null },
+  });
+  console.log('✅ Pays created:', paysCI.nom);
+
+  // ── Entreprise Abidjan (même tenant, pays et devise partagés XOF) ──
+  const themeGold = await prisma.theme.findFirst({ where: { nom: 'Royal Gold' } });
+  let entrepriseCI = await prisma.entreprise.findFirst({ where: { tenant_id: tenant.id, code: 'ENT002' } });
+  if (!entrepriseCI) {
+    entrepriseCI = await prisma.entreprise.create({
+      data: {
+        tenant_id: tenant.id,
+        pays_id: paysCI.id,
+        theme_id: themeGold?.id ?? null,
+        code: 'ENT002',
+        nom: 'SARL Abidjan Négoce',
+        siret: 'CI-002-2024',
+        adresse: "Boulevard de la République, Plateau, Abidjan, Côte d'Ivoire",
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Entreprise créée/vérifiée:', entrepriseCI.nom);
+
+  // ── Hiérarchie Abidjan ───────────────────────────────────────
+  let siegeAbidjan = await prisma.succursale.findFirst({ where: { entreprise_id: entrepriseCI.id, code: 'SIEGECI' } });
+  if (!siegeAbidjan) {
+    siegeAbidjan = await prisma.succursale.create({
+      data: { entreprise_id: entrepriseCI.id, nom: 'Siège Abidjan', code: 'SIEGECI', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  let dirFinanceCI = await prisma.direction.findFirst({ where: { succursale_id: siegeAbidjan.id, code: 'DIRFINCI' } });
+  if (!dirFinanceCI) {
+    dirFinanceCI = await prisma.direction.create({
+      data: { succursale_id: siegeAbidjan.id, nom: 'Direction Financière', code: 'DIRFINCI', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  let dirCommerceCI = await prisma.direction.findFirst({ where: { succursale_id: siegeAbidjan.id, code: 'DIRCOMCI' } });
+  if (!dirCommerceCI) {
+    dirCommerceCI = await prisma.direction.create({
+      data: { succursale_id: siegeAbidjan.id, nom: 'Direction Commerciale', code: 'DIRCOMCI', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Succursale + 2 directions Abidjan créées/vérifiées');
+
+  const servicesDataCI = [
+    { direction_id: dirFinanceCI.id, code: 'COMPTACI', nom: 'Comptabilité' },
+    { direction_id: dirCommerceCI.id, code: 'VENTESCI', nom: 'Ventes' },
+  ];
+  const servicesCI: Record<string, { id: number }> = {};
+  for (const s of servicesDataCI) {
+    let svc = await prisma.service.findFirst({ where: { direction_id: s.direction_id, code: s.code } });
+    if (!svc) {
+      svc = await prisma.service.create({ data: { direction_id: s.direction_id, nom: s.nom, code: s.code, etat: 'ACTIF', created_by: 1, updated_by: 1 } });
+    }
+    servicesCI[s.code] = svc;
+  }
+  console.log(`✅ ${servicesDataCI.length} services Abidjan créés/vérifiés`);
+
+  // ── Utilisateurs Abidjan ─────────────────────────────────────
+  const comptableCIHash = await bcrypt.hash('User@2026!', 12);
+  const comptableCI = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'comptable.ci@ledgersync.demo' } },
+    update: { service_id: servicesCI['COMPTACI']!.id, entreprise_id: entrepriseCI.id },
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entrepriseCI.id,
+      service_id: servicesCI['COMPTACI']!.id,
+      email: 'comptable.ci@ledgersync.demo',
+      nom: 'KOUAME',
+      prenom: 'Serge',
+      password_hash: comptableCIHash,
+      role: 'USER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Comptable Abidjan créé/vérifié:', comptableCI.email);
+
+  const managerCIHash = await bcrypt.hash('Manager@2026!', 12);
+  const managerCI = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'manager.ci@ledgersync.demo' } },
+    update: { service_id: servicesCI['VENTESCI']!.id, entreprise_id: entrepriseCI.id },
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entrepriseCI.id,
+      service_id: servicesCI['VENTESCI']!.id,
+      email: 'manager.ci@ledgersync.demo',
+      nom: 'YAO',
+      prenom: 'Marie-Claire',
+      password_hash: managerCIHash,
+      role: 'MANAGER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Manager Abidjan créé/vérifié:', managerCI.email);
+
+  // ── Banque + Compte Abidjan ──────────────────────────────────
+  let banqueCI = await prisma.banque.findFirst({ where: { tenant_id: tenant.id, code_swift: 'SGCICIAB' } });
+  if (!banqueCI) {
+    banqueCI = await prisma.banque.create({
+      data: { tenant_id: tenant.id, code_swift: 'SGCICIAB', nom: "Société Générale Côte d'Ivoire", pays_code: 'CI', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Banque créée/vérifiée:', banqueCI.nom);
+
+  let compteCI = await prisma.compteBancaire.findFirst({ where: { entreprise_id: entrepriseCI.id, numero_compte: 'CI93-0001-0000-0556677889' } });
+  if (!compteCI) {
+    compteCI = await prisma.compteBancaire.create({
+      data: {
+        entreprise_id: entrepriseCI.id,
+        banque_id: banqueCI.id,
+        numero_compte: 'CI93-0001-0000-0556677889',
+        intitule: 'Compte Principal CFA',
+        devise: 'XOF',
+        solde_initial: 30000000,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Compte Bancaire créé/vérifié:', compteCI.intitule);
+
+  // ── Période comptable Abidjan (mois courant) ────────────────
+  await prisma.periodeComptable.upsert({
+    where: { entreprise_id_mois_annee: { entreprise_id: entrepriseCI.id, mois: now.getMonth() + 1, annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entrepriseCI.id,
+      mois: now.getMonth() + 1,
+      annee: now.getFullYear(),
+      statut: 'OUVERT',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log(`✅ Période ${now.getMonth() + 1}/${now.getFullYear()} Abidjan créée/vérifiée`);
+
+  // ── Ecritures + Relevé Abidjan — rapprochement en cours avec écart ──
+  const ecrituresCI = [
+    { reference: 'CI-2026-001', libelle: 'Paiement fournisseur import textile', montant: 950000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 4) },
+    { reference: 'CI-2026-002', libelle: 'Encaissement client Abidjan Distribution', montant: 2200000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 9) },
+    { reference: 'CI-2026-003', libelle: 'Charges sociales CNPS', montant: 320000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 15) },
+    { reference: 'CI-2026-004', libelle: 'Vente grossiste Yamoussoukro', montant: 1100000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 19) },
+  ];
+  let ecrituresCICreees = 0;
+  for (const e of ecrituresCI) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: compteCI.id, reference: e.reference } });
+    if (found) continue;
+    await prisma.ecritureComptable.create({
+      data: { entreprise_id: entrepriseCI.id, compte_bancaire_id: compteCI.id, ...e, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear(), etat: 'VALIDE', created_by: comptableCI.id, updated_by: comptableCI.id },
+    });
+    ecrituresCICreees++;
+  }
+
+  const relevesCI = [
+    { reference: 'OPE-CI-001', libelle: 'VIR FOURNISSEUR TEXTILE', montant: 950000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 4) },
+    { reference: 'OPE-CI-002', libelle: 'VIR ABIDJAN DISTRIBUTION', montant: 2200000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 9) },
+    { reference: 'OPE-CI-003', libelle: 'PRLV CNPS', montant: 320000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 16) },
+    { reference: 'OPE-CI-004', libelle: 'VIR YAMOUSSOUKRO', montant: 1100000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 19) },
+    // Frais bancaires pas encore comptabilisés côté entreprise (écart en attente)
+    { reference: 'OPE-CI-005', libelle: 'FRAIS TENUE COMPTE', montant: 8500, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 28) },
+  ];
+  let relevesCICrees = 0;
+  for (let i = 0; i < relevesCI.length; i++) {
+    const found = await prisma.releveBancaireLigne.findFirst({ where: { compte_bancaire_id: compteCI.id, reference: relevesCI[i]!.reference } });
+    if (found) continue;
+    await prisma.releveBancaireLigne.create({
+      data: { compte_bancaire_id: compteCI.id, ...relevesCI[i], num_ligne: i + 1, etat: 'VALIDE', created_by: comptableCI.id, updated_by: comptableCI.id },
+    });
+    relevesCICrees++;
+  }
+  console.log(`✅ Compte Abidjan : ${ecrituresCICreees}/${ecrituresCI.length} écritures, ${relevesCICrees}/${relevesCI.length} lignes de relevé créées (déjà présentes ignorées)`);
+
+  await prisma.rapprochement.upsert({
+    where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id: entrepriseCI.id, compte_bancaire_id: compteCI.id, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entrepriseCI.id,
+      compte_bancaire_id: compteCI.id,
+      periode_mois: now.getMonth() + 1,
+      periode_annee: now.getFullYear(),
+      statut: 'EN_COURS',
+      montant_ecart: 8500,
+      etat: 'BROUILLON',
+      created_by: comptableCI.id,
+      updated_by: comptableCI.id,
+    },
+  });
+  console.log('✅ Rapprochement Abidjan créé/vérifié (en cours, écart 8 500 XOF)');
+
   console.log('\n🎉 Seed terminé avec succès!');
   console.log('\n📋 Comptes de connexion:');
   console.log('   Super Admin : admin@ledgersync.demo / Admin@2026!');
@@ -573,8 +778,12 @@ async function main() {
   console.log('   Comptable   : comptable@ledgersync.demo / User@2026!');
   console.log('   Superviseur : superviseur@ledgersync.demo / Superviseur@2026!');
   console.log('   Manager     : manager@ledgersync.demo / Manager@2026!');
-  console.log('\n🏢 Hiérarchie : Siège Dakar > Direction Financière (Comptabilité, Trésorerie) / Direction Commerciale (Ventes, Marketing)');
-  console.log('🏦 Banques    : Banque de Dakar (Compte Principal + Épargne XOF), Ecobank Sénégal (Compte Opérations EUR)');
+  console.log('   Comptable CI: comptable.ci@ledgersync.demo / User@2026!');
+  console.log('   Manager CI  : manager.ci@ledgersync.demo / Manager@2026!');
+  console.log('\n🏢 Hiérarchie SN : Siège Dakar > Direction Financière (Comptabilité, Trésorerie) / Direction Commerciale (Ventes, Marketing)');
+  console.log('🏦 Banques SN    : Banque de Dakar (Compte Principal + Épargne XOF), Ecobank Sénégal (Compte Opérations EUR)');
+  console.log("\n🏢 Hiérarchie CI : Siège Abidjan > Direction Financière (Comptabilité) / Direction Commerciale (Ventes)");
+  console.log("🏦 Banque CI     : Société Générale Côte d'Ivoire (Compte Principal CFA)");
 }
 
 main()
