@@ -22,6 +22,7 @@ const loginSchema = z.object({
 
 const forgotPasswordSchema = z.object({ email: z.string().email() });
 const resetPasswordSchema = z.object({ token: z.string().min(1), password: z.string().min(6).max(100) });
+const changePasswordSchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(6).max(100) });
 
 const hashResetToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
 
@@ -147,6 +148,7 @@ router.post('/login', async (req, res): Promise<void> => {
         tenantCode: user.tenant?.code,
         entrepriseId: user.entreprise_id,
         entrepriseNom: user.entreprise?.nom,
+        mustChangePassword: user.must_change_password,
       },
     });
   } catch (err) {
@@ -277,6 +279,35 @@ router.post('/reset-password', async (req, res): Promise<void> => {
     res.json({ success: true, message: 'Mot de passe réinitialisé avec succès' });
   } catch (err) {
     console.error('[AUTH/RESET-PASSWORD]', err);
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── POST /api/auth/change-password ──────────────────────────
+// Changement de mot de passe en session authentifiée (utilisé notamment pour
+// forcer le changement à la première connexion, must_change_password). La
+// session en cours reste valide : contrairement à reset-password (accessible
+// via un lien email non authentifié), l'utilisateur est ici déjà identifié.
+router.post('/change-password', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = changePasswordSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { currentPassword, newPassword } = parsed.data;
+
+  try {
+    const user = await prisma.utilisateur.findUnique({ where: { id: req.user!.userId } });
+    if (!user) { res.status(404).json({ success: false, message: 'Utilisateur non trouvé' }); return; }
+
+    const validPassword = await bcrypt.compare(currentPassword, user.password_hash);
+    if (!validPassword) { res.status(401).json({ success: false, message: 'Mot de passe actuel incorrect' }); return; }
+
+    await prisma.utilisateur.update({
+      where: { id: user.id },
+      data: { password_hash: await bcrypt.hash(newPassword, 12), must_change_password: false, updated_by: user.id },
+    });
+    void sendPasswordChangedEmail({ to: user.email, prenom: user.prenom });
+    res.json({ success: true, message: 'Mot de passe modifié avec succès' });
+  } catch (err) {
+    console.error('[AUTH/CHANGE-PASSWORD]', err);
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

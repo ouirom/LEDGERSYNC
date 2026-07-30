@@ -13,11 +13,13 @@ interface User {
   tenantCode?: string;
   entrepriseId?: number;
   entrepriseNom?: string;
+  mustChangePassword?: boolean;
 }
 
 // Forme renvoyée par GET /auth/me (plus riche que le User stocké en contexte,
 // utilisée seulement pour extraire le thème de l'entreprise/tenant à la connexion)
 interface MeResponseUser {
+  must_change_password?: boolean;
   entreprise?: { theme?: Theme | null } | null;
   tenant?: { theme?: Theme | null } | null;
 }
@@ -29,6 +31,7 @@ interface AuthContextType {
   logout: () => void;
   isAuthenticated: boolean;
   hasRole: (...roles: string[]) => boolean;
+  markPasswordChanged: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -50,7 +53,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const token = localStorage.getItem('accessToken');
     if (token) {
       api.get('/auth/me')
-        .then(({ data }) => { setUser(data.user); applyEntrepriseTheme(data.user); })
+        .then(({ data }) => {
+          setUser({ ...data.user, mustChangePassword: data.user.must_change_password });
+          applyEntrepriseTheme(data.user);
+        })
         .catch(() => { localStorage.clear(); })
         .finally(() => setLoading(false));
     } else {
@@ -78,8 +84,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return user ? roles.includes(user.role) : false;
   }, [user]);
 
+  const markPasswordChanged = useCallback(() => {
+    setUser(u => u ? { ...u, mustChangePassword: false } : u);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, hasRole }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, hasRole, markPasswordChanged }}>
       {children}
     </AuthContext.Provider>
   );

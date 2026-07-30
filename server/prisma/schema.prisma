@@ -256,6 +256,7 @@ model Utilisateur {
   refresh_token   String?          @db.Text
   reset_token_hash String?         @db.VarChar(255)
   reset_token_expires DateTime?
+  must_change_password Boolean     @default(false)
   derniere_connexion DateTime?
   etat            EtatGeneral      @default(ACTIF)
   created_at      DateTime         @default(now())

@@ -97,7 +97,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       data: {
         tenant_id: req.user!.tenantId, nom, prenom, email, role, password_hash,
         entreprise_id: entreprise_id ?? null, service_id: service_id ?? null,
-        etat: 'ACTIF', created_by: req.user!.userId, updated_by: req.user!.userId,
+        etat: 'ACTIF', must_change_password: true, created_by: req.user!.userId, updated_by: req.user!.userId,
       },
       select: userSelect,
     });
@@ -164,7 +164,7 @@ router.patch('/:id/reset-password', async (req: AuthRequest, res: Response): Pro
 
   try {
     const password_hash = await bcrypt.hash(parsed.data.password, 12);
-    await prisma.utilisateur.update({ where: { id }, data: { password_hash, refresh_token: null, updated_by: req.user!.userId } });
+    await prisma.utilisateur.update({ where: { id }, data: { password_hash, must_change_password: true, refresh_token: null, updated_by: req.user!.userId } });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: id, action: 'RESET_PASSWORD', ipAddress: req.ip });
     res.json({ success: true, message: 'Mot de passe réinitialisé' });
   } catch (err) {
