@@ -613,3 +613,26 @@ model FichierSource {
 
   @@map("fichiers_sources")
 }
+
+// ============================================================
+// PARAMETRES DE L'APPLICATION
+// ============================================================
+// Stockage générique clé/valeur, groupé par catégorie (ex. "EMAIL"),
+// permettant de rendre configurable depuis l'UI ce qui vivait jusque-là
+// uniquement dans les variables d'environnement — sans changement de schéma
+// à chaque nouveau paramètre. Portée globale à l'instance (pas par tenant) :
+// ce sont des réglages d'infrastructure (ex. SMTP), pas des données métier.
+model ParametreApplication {
+  id              Int          @id @default(autoincrement())
+  categorie       String       @db.VarChar(50)
+  cle             String       @db.VarChar(100)
+  valeur          String?      @db.Text
+  etat            EtatGeneral  @default(ACTIF)
+  created_at      DateTime     @default(now())
+  created_by      Int?
+  updated_at      DateTime     @updatedAt
+  updated_by      Int?
+
+  @@unique([categorie, cle])
+  @@map("parametres_application")
+}

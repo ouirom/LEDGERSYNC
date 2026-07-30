@@ -1,19 +1,5 @@
 import nodemailer from 'nodemailer';
-
-const smtpHost = process.env.SMTP_HOST;
-const fromAddress = process.env.SMTP_FROM || 'LedgerSync <no-reply@ledgersync.demo>';
-
-// En développement (ou tant que le SMTP n'est pas configuré), on ne bloque jamais
-// le flux applicatif faute de serveur mail réel : les emails sont simplement
-// journalisés dans la console (jsonTransport) au lieu d'être envoyés.
-const transporter = smtpHost
-  ? nodemailer.createTransport({
-      host: smtpHost,
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined,
-    })
-  : nodemailer.createTransport({ jsonTransport: true });
+import prisma from '../config/db';
 
 interface SendMailParams {
   to: string;
@@ -21,18 +7,68 @@ interface SendMailParams {
   html: string;
 }
 
+interface SmtpConfig {
+  host: string;
+  port: number;
+  secure: boolean;
+  user: string;
+  pass: string;
+  from: string;
+}
+
+// La configuration SMTP est modifiable depuis l'UI (Paramètres > Email, table
+// parametres_application) sans redémarrage : relue à chaque envoi plutôt que
+// figée au démarrage du process. Les variables d'environnement ne servent que
+// de valeurs par défaut tant qu'aucun réglage n'a été enregistré via l'UI.
+async function getSmtpConfig(): Promise<SmtpConfig> {
+  const rows = await prisma.parametreApplication.findMany({ where: { categorie: 'EMAIL', etat: 'ACTIF' } });
+  const db = Object.fromEntries(rows.map(r => [r.cle, r.valeur]));
+  return {
+    host: db['smtp_host'] || process.env.SMTP_HOST || '',
+    port: parseInt(db['smtp_port'] || process.env.SMTP_PORT || '587', 10),
+    secure: (db['smtp_secure'] ?? process.env.SMTP_SECURE) === 'true',
+    user: db['smtp_user'] || process.env.SMTP_USER || '',
+    pass: db['smtp_pass'] || process.env.SMTP_PASS || '',
+    from: db['smtp_from'] || process.env.SMTP_FROM || 'LedgerSync <no-reply@ledgersync.demo>',
+  };
+}
+
+function buildTransporter(cfg: SmtpConfig) {
+  // En développement (ou tant que le SMTP n'est pas configuré), on ne bloque jamais
+  // le flux applicatif faute de serveur mail réel : les emails sont simplement
+  // journalisés dans la console (jsonTransport) au lieu d'être envoyés.
+  return cfg.host
+    ? nodemailer.createTransport({
+        host: cfg.host, port: cfg.port, secure: cfg.secure, auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
+        // Échec rapide sur un hôte injoignable/mal saisi plutôt que d'attendre le
+        // timeout DNS/TCP par défaut (jusqu'à plusieurs dizaines de secondes) —
+        // important pour le bouton « Tester l'envoi » des paramètres.
+        connectionTimeout: 10000,
+      })
+    : nodemailer.createTransport({ jsonTransport: true });
+}
+
 // L'envoi ne doit jamais faire échouer l'action métier qui le déclenche
 // (création de compte, demande de réinitialisation...) : les erreurs sont
 // journalisées mais avalées ici plutôt que propagées à l'appelant.
 export async function sendMail({ to, subject, html }: SendMailParams): Promise<void> {
   try {
-    const info = await transporter.sendMail({ from: fromAddress, to, subject, html });
-    if (!smtpHost) {
-      console.log(`📧 [DEV] SMTP non configuré — email journalisé (non envoyé) → ${to} : "${subject}"`);
-      console.log(info.message?.toString());
-    }
+    await sendMailStrict({ to, subject, html });
   } catch (err) {
     console.error('[MAILER] Échec de l\'envoi de l\'email:', err);
+  }
+}
+
+// Variante qui propage les erreurs — utilisée par l'action « Tester l'envoi »
+// des paramètres email, où l'utilisateur a justement besoin de savoir si ça a
+// échoué plutôt que de voir l'erreur avalée silencieusement.
+export async function sendMailStrict({ to, subject, html }: SendMailParams): Promise<void> {
+  const cfg = await getSmtpConfig();
+  const transporter = buildTransporter(cfg);
+  const info = await transporter.sendMail({ from: cfg.from, to, subject, html });
+  if (!cfg.host) {
+    console.log(`📧 [DEV] SMTP non configuré — email journalisé (non envoyé) → ${to} : "${subject}"`);
+    console.log(info.message?.toString());
   }
 }
 

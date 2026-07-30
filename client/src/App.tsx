@@ -16,6 +16,7 @@ import JobMonitorPage from './pages/jobs/JobMonitorPage';
 import PeriodsSettingsPage from './pages/settings/PeriodsSettingsPage';
 import ThemesSettingsPage from './pages/settings/ThemesSettingsPage';
 import BankTemplatesPage from './pages/settings/BankTemplatesPage';
+import ApplicationSettingsPage from './pages/settings/ApplicationSettingsPage';
 import AuditTrailPage from './pages/admin/AuditTrailPage';
 import HierarchyPage from './pages/admin/HierarchyPage';
 import ProfilePage from './pages/ProfilePage';
@@ -69,6 +70,7 @@ function App() {
               <Route path="settings/periods" element={<PeriodsSettingsPage />} />
               <Route path="settings/themes" element={<ThemesSettingsPage />} />
               <Route path="settings/bank-templates" element={<BankTemplatesPage />} />
+              <Route path="settings/application" element={<ApplicationSettingsPage />} />
               {/* Admin */}
               <Route path="admin/hierarchy" element={<HierarchyPage />} />
               <Route path="admin/audit-trail" element={<AuditTrailPage />} />

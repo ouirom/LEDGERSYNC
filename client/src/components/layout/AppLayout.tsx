@@ -4,7 +4,7 @@ import {
   LayoutDashboard, GitMerge, Upload, Briefcase, Settings,
   Shield, ChevronLeft, ChevronRight, Bell, Moon, Sun,
   User, LogOut, Wifi, WifiOff, FileText, FilePen,
-  HelpCircle, Palette, Building2, Search, X, Command
+  HelpCircle, Palette, Building2, Search, X, Command, Settings2
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -39,6 +39,7 @@ const NAV_GROUPS = [
       { to: '/settings/periods', icon: Settings, label: 'Périodes' },
       { to: '/settings/themes', icon: Palette, label: 'Thèmes' },
       { to: '/settings/bank-templates', icon: FileText, label: 'Templates Banque' },
+      { to: '/settings/application', icon: Settings2, label: 'Application', roles: ['SUPER_ADMIN'] },
     ],
   },
   {
@@ -62,6 +63,7 @@ const SEARCH_INDEX = [
   { label: 'Périodes Comptables', to: '/settings/periods', section: 'Paramètres' },
   { label: 'Thèmes & Personnalisation', to: '/settings/themes', section: 'Paramètres' },
   { label: 'Templates Import Bancaire', to: '/settings/bank-templates', section: 'Paramètres' },
+  { label: 'Paramètres de l\'application', to: '/settings/application', section: 'Paramètres' },
   { label: 'Hiérarchie Organisationnelle', to: '/admin/hierarchy', section: 'Administration' },
   { label: 'Piste d\'Audit', to: '/admin/audit-trail', section: 'Administration' },
   { label: 'Mon Profil', to: '/profile', section: 'Compte' },
@@ -69,7 +71,7 @@ const SEARCH_INDEX = [
 ];
 
 export default function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, hasRole } = useAuth();
   const { isDark, toggleDark } = useTheme();
   const { connected } = useSocket();
   const [collapsed, setCollapsed] = useState(false);
@@ -192,7 +194,7 @@ export default function AppLayout() {
           {NAV_GROUPS.map(group => (
             <div key={group.label}>
               {!collapsed && <div className="nav-section-label">{group.label}</div>}
-              {group.items.map(item => (
+              {group.items.filter(item => !('roles' in item) || hasRole(...item.roles)).map(item => (
                 <NavLink
                   key={item.to}
                   to={item.to}
