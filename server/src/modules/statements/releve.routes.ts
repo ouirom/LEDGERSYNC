@@ -47,8 +47,13 @@ router.post('/preview', upload.array('files', 20), async (req: AuthRequest, res:
 
     const toutesLesLignes = pages.flatMap(p => p.lignes);
     const totalLignes = toutesLesLignes.length;
-    const lignesInvalides = toutesLesLignes.filter(l => !l.valide).length;
-    const lignesIncertaines = toutesLesLignes.filter(l => l.valide && l.incertain).length;
+    const lignesValides = toutesLesLignes.filter(l => l.valide);
+    const lignesInvalides = toutesLesLignes.length - lignesValides.length;
+    const lignesIncertaines = lignesValides.filter(l => l.incertain).length;
+    // Sommes calculées sur les seules lignes valides (celles qui seront
+    // effectivement importées) — les lignes invalides ont un montant illisible.
+    const totalDebit = lignesValides.reduce((sum, l) => sum + (l.debit ?? 0), 0);
+    const totalCredit = lignesValides.reduce((sum, l) => sum + (l.credit ?? 0), 0);
 
     res.json({
       success: true,
@@ -57,6 +62,8 @@ router.post('/preview', upload.array('files', 20), async (req: AuthRequest, res:
         total_lignes: totalLignes,
         lignes_invalides: lignesInvalides,
         lignes_incertaines: lignesIncertaines,
+        total_debit: totalDebit,
+        total_credit: totalCredit,
         pages: pages.map(p => ({ nom: p.nom, nb_lignes: p.nb_lignes })),
         apercu: toutesLesLignes.slice(0, 50),
       },

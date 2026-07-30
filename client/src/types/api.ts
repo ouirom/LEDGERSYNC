@@ -135,6 +135,8 @@ export interface ImportPreview {
   total_lignes: number;
   lignes_invalides: number;
   lignes_incertaines: number;
+  total_debit: number;
+  total_credit: number;
   pages: { nom: string; nb_lignes: number }[];
   apercu: PreviewLigne[];
 }

@@ -206,6 +206,16 @@ export default function ExcelImportPage() {
                   </span>
                 )}
               </div>
+              <div style={{ display: 'flex', gap: 10, marginBottom: 10 }}>
+                <div style={{ flex: 1, padding: '8px 12px', background: 'var(--danger)10', border: '1px solid var(--danger)30', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total débit</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--danger)' }}>{fmtMontant(preview.total_debit)}</span>
+                </div>
+                <div style={{ flex: 1, padding: '8px 12px', background: 'var(--success)10', border: '1px solid var(--success)30', borderRadius: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Total crédit</span>
+                  <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--success)' }}>{fmtMontant(preview.total_credit)}</span>
+                </div>
+              </div>
               <div className="table-container" style={{ maxHeight: 280, overflow: 'auto', borderRadius: 8, border: '1px solid var(--border)' }}>
                 <table style={{ fontSize: 11 }}>
                   <thead>
@@ -228,6 +238,13 @@ export default function ExcelImportPage() {
                       </tr>
                     ))}
                   </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3} style={{ padding: '6px 10px', fontWeight: 700, borderTop: '2px solid var(--border)' }}>Total ({preview.total_lignes - preview.lignes_invalides} ligne{preview.total_lignes - preview.lignes_invalides > 1 ? 's' : ''} valide{preview.total_lignes - preview.lignes_invalides > 1 ? 's' : ''})</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--danger)', borderTop: '2px solid var(--border)' }}>{fmtMontant(preview.total_debit)}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--success)', borderTop: '2px solid var(--border)' }}>{fmtMontant(preview.total_credit)}</td>
+                    </tr>
+                  </tfoot>
                 </table>
               </div>
               {preview.total_lignes > preview.apercu.length && (
