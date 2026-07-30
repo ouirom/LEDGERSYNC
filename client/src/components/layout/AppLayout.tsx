@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSocket } from '../../contexts/SocketContext';
+import SessionTimeoutGuard from './SessionTimeoutGuard';
 
 const NAV_GROUPS = [
   {
@@ -416,6 +417,8 @@ export default function AppLayout() {
           </div>
         </div>
       )}
+
+      <SessionTimeoutGuard />
     </div>
   );
 }
