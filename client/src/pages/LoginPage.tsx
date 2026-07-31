@@ -36,6 +36,8 @@ export default function LoginPage() {
       manager: ['manager@ledgersync.demo', 'Manager@2026!'],
       user_ci: ['comptable.ci@ledgersync.demo', 'User@2026!'],
       manager_ci: ['manager.ci@ledgersync.demo', 'Manager@2026!'],
+      user_motor: ['comptable.motor@ledgersync.demo', 'User@2026!'],
+      manager_motor: ['manager.motor@ledgersync.demo', 'Manager@2026!'],
     };
     const [e, p] = accounts[role];
     setEmail(e); setPassword(p);
@@ -161,6 +163,13 @@ export default function LoginPage() {
               accounts: [
                 { key: 'user_ci', label: 'Comptable', color: '#10b981' },
                 { key: 'manager_ci', label: 'Manager', color: '#8b5cf6' },
+              ],
+            },
+            {
+              entreprise: 'KPANDJI MOTOR (Togo)',
+              accounts: [
+                { key: 'user_motor', label: 'Comptable', color: '#10b981' },
+                { key: 'manager_motor', label: 'Manager', color: '#8b5cf6' },
               ],
             },
           ].map(group => (

@@ -1061,6 +1061,221 @@ async function main() {
   });
   console.log('✅ Rapprochement Abidjan créé/vérifié (en cours, écart 8 500 XOF)');
 
+  // ============================================================
+  // ENTREPRISE 3 : KPANDJI MOTOR — TOGO (concession/garage automobile)
+  // ============================================================
+
+  // ── Pays : Togo ────────────────────────────────────────────
+  const paysTG = await prisma.pays.upsert({
+    where: { code_iso: 'TG' },
+    update: {},
+    create: { code_iso: 'TG', nom: 'Togo', devise: 'XOF', etat: 'ACTIF', created_by: null, updated_by: null },
+  });
+  console.log('✅ Pays created:', paysTG.nom);
+
+  // ── Entreprise Lomé (même tenant, XOF partagé) ────────────────
+  const themeCarbon = await prisma.theme.findFirst({ where: { nom: 'Carbon Dark' } });
+  let entrepriseMotor = await prisma.entreprise.findFirst({ where: { tenant_id: tenant.id, code: 'ENT003' } });
+  if (!entrepriseMotor) {
+    entrepriseMotor = await prisma.entreprise.create({
+      data: {
+        tenant_id: tenant.id,
+        pays_id: paysTG.id,
+        theme_id: themeCarbon?.id ?? null,
+        code: 'ENT003',
+        nom: 'KPANDJI MOTOR',
+        siret: 'TG-003-2024',
+        adresse: 'Boulevard du 13 Janvier, Lomé, Togo',
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Entreprise créée/vérifiée:', entrepriseMotor.nom);
+
+  // ── Hiérarchie Lomé ────────────────────────────────────────
+  let siegeLome = await prisma.succursale.findFirst({ where: { entreprise_id: entrepriseMotor.id, code: 'SIEGETG' } });
+  if (!siegeLome) {
+    siegeLome = await prisma.succursale.create({
+      data: { entreprise_id: entrepriseMotor.id, nom: 'Siège Lomé', code: 'SIEGETG', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  let dirFinanceTG = await prisma.direction.findFirst({ where: { succursale_id: siegeLome.id, code: 'DIRFINTG' } });
+  if (!dirFinanceTG) {
+    dirFinanceTG = await prisma.direction.create({
+      data: { succursale_id: siegeLome.id, nom: 'Direction Financière', code: 'DIRFINTG', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  let dirCommerceTG = await prisma.direction.findFirst({ where: { succursale_id: siegeLome.id, code: 'DIRCOMTG' } });
+  if (!dirCommerceTG) {
+    dirCommerceTG = await prisma.direction.create({
+      data: { succursale_id: siegeLome.id, nom: 'Direction Commerciale', code: 'DIRCOMTG', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Succursale + 2 directions Lomé créées/vérifiées');
+
+  const servicesDataTG = [
+    { direction_id: dirFinanceTG.id, code: 'COMPTATG', nom: 'Comptabilité' },
+    { direction_id: dirCommerceTG.id, code: 'VENTESTG', nom: 'Ventes Véhicules' },
+  ];
+  const servicesTG: Record<string, { id: number }> = {};
+  for (const s of servicesDataTG) {
+    let svc = await prisma.service.findFirst({ where: { direction_id: s.direction_id, code: s.code } });
+    if (!svc) {
+      svc = await prisma.service.create({ data: { direction_id: s.direction_id, nom: s.nom, code: s.code, etat: 'ACTIF', created_by: 1, updated_by: 1 } });
+    }
+    servicesTG[s.code] = svc;
+  }
+  console.log(`✅ ${servicesDataTG.length} services Lomé créés/vérifiés`);
+
+  // ── Utilisateurs Lomé ─────────────────────────────────────────
+  const comptableMotorHash = await bcrypt.hash('User@2026!', 12);
+  const comptableMotor = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'comptable.motor@ledgersync.demo' } },
+    update: { service_id: servicesTG['COMPTATG']!.id, entreprise_id: entrepriseMotor.id },
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entrepriseMotor.id,
+      service_id: servicesTG['COMPTATG']!.id,
+      email: 'comptable.motor@ledgersync.demo',
+      nom: 'AGBOSSOU',
+      prenom: 'Koffi',
+      password_hash: comptableMotorHash,
+      role: 'USER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Comptable Lomé créé/vérifié:', comptableMotor.email);
+
+  const managerMotorHash = await bcrypt.hash('Manager@2026!', 12);
+  const managerMotor = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'manager.motor@ledgersync.demo' } },
+    update: { service_id: servicesTG['VENTESTG']!.id, entreprise_id: entrepriseMotor.id },
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entrepriseMotor.id,
+      service_id: servicesTG['VENTESTG']!.id,
+      email: 'manager.motor@ledgersync.demo',
+      nom: 'AMEGANVI',
+      prenom: 'Essowè',
+      password_hash: managerMotorHash,
+      role: 'MANAGER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Manager Lomé créé/vérifié:', managerMotor.email);
+
+  // ── Banque + Compte Lomé (rattachés au Siège Lomé) ────────────
+  let banqueMotor = await prisma.banque.findFirst({ where: { tenant_id: tenant.id, code_swift: 'ORABTGLO' } });
+  if (!banqueMotor) {
+    banqueMotor = await prisma.banque.create({
+      data: { tenant_id: tenant.id, entreprise_id: entrepriseMotor.id, succursale_id: siegeLome.id, code_swift: 'ORABTGLO', nom: 'Orabank Togo', pays_code: 'TG', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  } else if (!banqueMotor.succursale_id) {
+    banqueMotor = await prisma.banque.update({ where: { id: banqueMotor.id }, data: { entreprise_id: entrepriseMotor.id, succursale_id: siegeLome.id } });
+  }
+  console.log('✅ Banque créée/vérifiée:', banqueMotor.nom);
+
+  let compteMotor = await prisma.compteBancaire.findFirst({ where: { entreprise_id: entrepriseMotor.id, numero_compte: 'TG78-0001-0000-0778899001' } });
+  if (!compteMotor) {
+    compteMotor = await prisma.compteBancaire.create({
+      data: {
+        entreprise_id: entrepriseMotor.id,
+        succursale_id: siegeLome.id,
+        banque_id: banqueMotor.id,
+        numero_compte: 'TG78-0001-0000-0778899001',
+        intitule: 'Compte Principal XOF',
+        devise: 'XOF',
+        solde_initial: 15000000,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  } else if (!compteMotor.succursale_id) {
+    compteMotor = await prisma.compteBancaire.update({ where: { id: compteMotor.id }, data: { succursale_id: siegeLome.id } });
+  }
+  console.log('✅ Compte Bancaire créé/vérifié:', compteMotor.intitule);
+
+  // ── Période comptable Lomé (mois courant) ────────────────────
+  await prisma.periodeComptable.upsert({
+    where: { entreprise_id_mois_annee: { entreprise_id: entrepriseMotor.id, mois: now.getMonth() + 1, annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entrepriseMotor.id,
+      mois: now.getMonth() + 1,
+      annee: now.getFullYear(),
+      statut: 'OUVERT',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log(`✅ Période ${now.getMonth() + 1}/${now.getFullYear()} Lomé créée/vérifiée`);
+
+  // ── Ecritures + Relevé Lomé — rapprochement en cours avec écart ──
+  const ecrituresMotor = [
+    { reference: 'MOT-2026-001', libelle: 'Vente véhicule Toyota Hilux', montant: 8500000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 3) },
+    { reference: 'MOT-2026-002', libelle: 'Achat pièces détachées Fournisseur Auto Plus', montant: 620000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 8) },
+    { reference: 'MOT-2026-003', libelle: 'Règlement assurance flotte véhicules', montant: 410000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 14) },
+    { reference: 'MOT-2026-004', libelle: 'Encaissement révision et entretien', montant: 275000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 21) },
+  ];
+  let ecrituresMotorCreees = 0;
+  for (const e of ecrituresMotor) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: compteMotor.id, reference: e.reference } });
+    if (found) continue;
+    await prisma.ecritureComptable.create({
+      data: { entreprise_id: entrepriseMotor.id, compte_bancaire_id: compteMotor.id, ...e, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear(), etat: 'VALIDE', created_by: comptableMotor.id, updated_by: comptableMotor.id },
+    });
+    ecrituresMotorCreees++;
+  }
+
+  const relevesMotor = [
+    { reference: 'OPE-MOT-001', libelle: 'VIR VENTE HILUX', montant: 8500000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 3) },
+    { reference: 'OPE-MOT-002', libelle: 'VIR FOURNISSEUR AUTO PLUS', montant: 620000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 8) },
+    { reference: 'OPE-MOT-003', libelle: 'PRLV ASSURANCE FLOTTE', montant: 410000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 15) },
+    { reference: 'OPE-MOT-004', libelle: 'VIR REVISION ENTRETIEN', montant: 275000, type: 'CREDIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 21) },
+    // Frais bancaires pas encore comptabilisés côté entreprise (écart en attente)
+    { reference: 'OPE-MOT-005', libelle: 'FRAIS TENUE COMPTE', montant: 12000, type: 'DEBIT' as const, date_operation: new Date(now.getFullYear(), now.getMonth(), 27) },
+  ];
+  let relevesMotorCrees = 0;
+  for (let i = 0; i < relevesMotor.length; i++) {
+    const found = await prisma.releveBancaireLigne.findFirst({ where: { compte_bancaire_id: compteMotor.id, reference: relevesMotor[i]!.reference } });
+    if (found) continue;
+    await prisma.releveBancaireLigne.create({
+      data: { compte_bancaire_id: compteMotor.id, ...relevesMotor[i], num_ligne: i + 1, etat: 'VALIDE', created_by: comptableMotor.id, updated_by: comptableMotor.id },
+    });
+    relevesMotorCrees++;
+  }
+  console.log(`✅ Compte Lomé : ${ecrituresMotorCreees}/${ecrituresMotor.length} écritures, ${relevesMotorCrees}/${relevesMotor.length} lignes de relevé créées (déjà présentes ignorées)`);
+
+  await prisma.ecritureComptable.updateMany({
+    where: { compte_bancaire_id: compteMotor.id, succursale_id: null },
+    data: { succursale_id: siegeLome.id },
+  });
+
+  await prisma.rapprochement.upsert({
+    where: { entreprise_id_compte_bancaire_id_periode_mois_periode_annee: { entreprise_id: entrepriseMotor.id, compte_bancaire_id: compteMotor.id, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear() } },
+    update: {},
+    create: {
+      entreprise_id: entrepriseMotor.id,
+      compte_bancaire_id: compteMotor.id,
+      periode_mois: now.getMonth() + 1,
+      periode_annee: now.getFullYear(),
+      statut: 'EN_COURS',
+      montant_ecart: 12000,
+      etat: 'BROUILLON',
+      created_by: comptableMotor.id,
+      updated_by: comptableMotor.id,
+    },
+  });
+  console.log('✅ Rapprochement Lomé créé/vérifié (en cours, écart 12 000 XOF)');
+
   console.log('\n🎉 Seed terminé avec succès!');
   console.log('\n📋 Comptes de connexion:');
   console.log('   Super Admin : admin@ledgersync.demo / Admin@2026!');
@@ -1070,6 +1285,8 @@ async function main() {
   console.log('   Manager     : manager@ledgersync.demo / Manager@2026!');
   console.log('   Comptable CI: comptable.ci@ledgersync.demo / User@2026!');
   console.log('   Manager CI  : manager.ci@ledgersync.demo / Manager@2026!');
+  console.log('   Comptable Motor: comptable.motor@ledgersync.demo / User@2026!');
+  console.log('   Manager Motor  : manager.motor@ledgersync.demo / Manager@2026!');
   console.log('\n📋 Comptes de test — rattachement multi-niveau (isolation des données) :');
   console.log('   Succursale Dakar     : succursale.dakar@ledgersync.demo / Succursale@2026! (voit uniquement le Siège Dakar)');
   console.log('   Succursale Thiès     : succursale.thies@ledgersync.demo / Succursale@2026! (voit uniquement la Succursale Thiès)');
@@ -1083,6 +1300,8 @@ async function main() {
   console.log('🏦 Banques SN    : Banque de Dakar + Ecobank Sénégal (Siège Dakar), Banque Agence Plateau (Agence Plateau), Banque Atlantique Thiès (Succursale Thiès)');
   console.log("\n🏢 Hiérarchie CI : Siège Abidjan > Direction Financière (Comptabilité) / Direction Commerciale (Ventes)");
   console.log("🏦 Banque CI     : Société Générale Côte d'Ivoire (Compte Principal CFA)");
+  console.log('\n🏢 Hiérarchie Motor : Siège Lomé > Direction Financière (Comptabilité) / Direction Commerciale (Ventes Véhicules)');
+  console.log('🏦 Banque Motor     : Orabank Togo (Compte Principal XOF)');
 }
 
 main()
