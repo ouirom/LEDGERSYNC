@@ -34,6 +34,8 @@ export default function LoginPage() {
       user: ['comptable@ledgersync.demo', 'User@2026!'],
       superviseur: ['superviseur@ledgersync.demo', 'Superviseur@2026!'],
       manager: ['manager@ledgersync.demo', 'Manager@2026!'],
+      user_ci: ['comptable.ci@ledgersync.demo', 'User@2026!'],
+      manager_ci: ['manager.ci@ledgersync.demo', 'Manager@2026!'],
     };
     const [e, p] = accounts[role];
     setEmail(e); setPassword(p);
@@ -140,22 +142,39 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo accounts */}
+        {/* Demo accounts, groupés par entreprise */}
         <div style={{ marginTop: 32, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.06)' }}>
           <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.3)', marginBottom: 12, textAlign: 'center', letterSpacing: 1, textTransform: 'uppercase' }}>Comptes de démonstration</p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {[
-              { key: 'admin', label: 'Super Admin', color: '#e94560' },
-              { key: 'daf', label: 'DAF', color: '#3b82f6' },
-              { key: 'user', label: 'Comptable', color: '#10b981' },
-              { key: 'superviseur', label: 'Superviseur', color: '#f59e0b' },
-              { key: 'manager', label: 'Manager', color: '#8b5cf6' },
-            ].map(({ key, label, color }) => (
-              <button key={key} onClick={() => fillDemo(key)} style={{ flex: '1 1 30%', padding: '8px 4px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${color}33`, borderRadius: 8, color, fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
-                {label}
-              </button>
-            ))}
-          </div>
+          {[
+            {
+              entreprise: 'SARL Démo Finances (Sénégal)',
+              accounts: [
+                { key: 'admin', label: 'Super Admin', color: '#e94560' },
+                { key: 'daf', label: 'DAF', color: '#3b82f6' },
+                { key: 'user', label: 'Comptable', color: '#10b981' },
+                { key: 'superviseur', label: 'Superviseur', color: '#f59e0b' },
+                { key: 'manager', label: 'Manager', color: '#8b5cf6' },
+              ],
+            },
+            {
+              entreprise: 'SARL Abidjan Négoce (Côte d\'Ivoire)',
+              accounts: [
+                { key: 'user_ci', label: 'Comptable', color: '#10b981' },
+                { key: 'manager_ci', label: 'Manager', color: '#8b5cf6' },
+              ],
+            },
+          ].map(group => (
+            <div key={group.entreprise} style={{ marginBottom: 12 }}>
+              <p style={{ fontSize: 10, color: 'rgba(255,255,255,0.35)', marginBottom: 6 }}>{group.entreprise}</p>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {group.accounts.map(({ key, label, color }) => (
+                  <button key={key} onClick={() => fillDemo(key)} style={{ flex: '1 1 30%', padding: '8px 4px', background: 'rgba(255,255,255,0.04)', border: `1px solid ${color}33`, borderRadius: 8, color, fontSize: 11, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s' }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>
