@@ -22,18 +22,23 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 // (entreprise/succursale explicite en body si son rôle n'est pas restreint,
 // sinon héritée automatiquement de son propre rattachement).
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { code_swift, nom, pays_code, entreprise_id, succursale_id } = req.body as Record<string, unknown>;
+  const { code_swift, nom, pays_code, entreprise_id, succursale_id, sous_succursale_id } = req.body as Record<string, unknown>;
   try {
     const scope = await resolveOrgScope(req.user!);
     const rattachement = scope.unrestricted
-      ? { entreprise_id: entreprise_id ? Number(entreprise_id) : null, succursale_id: succursale_id ? Number(succursale_id) : null }
-      : { entreprise_id: scope.entrepriseId, succursale_id: scope.succursaleId };
+      ? {
+          entreprise_id: entreprise_id ? Number(entreprise_id) : null,
+          succursale_id: succursale_id ? Number(succursale_id) : null,
+          sous_succursale_id: sous_succursale_id ? Number(sous_succursale_id) : null,
+        }
+      : { entreprise_id: scope.entrepriseId, succursale_id: scope.succursaleId, sous_succursale_id: scope.sousSuccursaleId };
 
     const data = await prisma.banque.create({
       data: {
         tenant_id: req.user!.tenantId,
         entreprise_id: rattachement.entreprise_id,
         succursale_id: rattachement.succursale_id,
+        sous_succursale_id: rattachement.sous_succursale_id,
         code_swift: code_swift as string, nom: nom as string, pays_code: pays_code as string,
         etat: 'ACTIF', created_by: req.user!.userId, updated_by: req.user!.userId,
       },

@@ -19,7 +19,7 @@ const ROLE_LABELS: Record<RoleUtilisateur, string> = {
 // (séparation des fonctions, miroir de la règle appliquée côté serveur)
 const ROLES_RESERVED_TO_SUPER_ADMIN: RoleUtilisateur[] = ['SUPER_ADMIN', 'ADMIN_TENANT'];
 
-type NiveauRattachement = '' | 'entreprise' | 'succursale' | 'direction' | 'service';
+type NiveauRattachement = '' | 'entreprise' | 'succursale' | 'sous_succursale' | 'direction' | 'service';
 
 interface UserModalState {
   mode: 'add' | 'edit';
@@ -181,6 +181,7 @@ const EMPTY_USER_FORM: Omit<UserModalState, 'mode' | 'targetId'> = {
 const NIVEAU_LABELS: Record<Exclude<NiveauRattachement, ''>, string> = {
   entreprise: 'Entreprise',
   succursale: 'Succursale',
+  sous_succursale: 'Sous-succursale',
   direction: 'Direction',
   service: 'Service',
 };
@@ -314,6 +315,7 @@ export default function HierarchyPage() {
   // Options pour le bouton global "Ajouter une entité"
   const succursaleOptions = entreprises.flatMap(e => (e.succursales || []).map(s => ({ id: s.id, label: `${s.nom} (${e.nom})` })));
   const directionOptions = entreprises.flatMap(e => (e.succursales || []).flatMap(s => (s.directions || []).map(d => ({ id: d.id, label: `${d.nom} (${s.nom})` }))));
+  const sousSuccursaleOptions = entreprises.flatMap(e => (e.succursales || []).flatMap(s => (s.sous_succursales || []).map(ss => ({ id: ss.id, label: `${ss.nom} (${s.nom})` }))));
 
   const globalAddTypes: Array<{ type: NodeType; parents: Array<{ id: number; label: string }>; parentLabel: string }> = [
     { type: 'entreprise', parents: [], parentLabel: '' },
@@ -346,6 +348,7 @@ export default function HierarchyPage() {
   const rattachementLabel = (u: Utilisateur): string => {
     if (u.service) return `${u.service.nom} (Service)`;
     if (u.direction) return `${u.direction.nom} (Direction)`;
+    if (u.sous_succursale) return `${u.sous_succursale.nom} (Sous-succursale)`;
     if (u.succursale) return `${u.succursale.nom} (Succursale)`;
     if (u.entreprise) return u.entreprise.nom;
     return '—';
@@ -353,12 +356,13 @@ export default function HierarchyPage() {
 
   // Options disponibles pour le niveau de rattachement choisi dans le formulaire
   // utilisateur — chaque niveau a sa propre liste, avec repère hiérarchique dans
-  // le libellé pour les niveaux imbriqués (succursaleOptions/directionOptions
-  // sont déjà calculés plus haut pour le formulaire d'ajout d'entité).
+  // le libellé pour les niveaux imbriqués (succursaleOptions/directionOptions/
+  // sousSuccursaleOptions sont déjà calculés plus haut pour le formulaire d'ajout d'entité).
   const rattachementOptions = (niveau: NiveauRattachement): Array<{ id: number; label: string }> => {
     switch (niveau) {
       case 'entreprise': return entreprises.map(e => ({ id: e.id, label: e.nom }));
       case 'succursale': return succursaleOptions;
+      case 'sous_succursale': return sousSuccursaleOptions;
       case 'direction': return directionOptions;
       case 'service': return serviceOptions.map(s => ({ id: s.id, label: s.label }));
       default: return [];
@@ -374,7 +378,8 @@ export default function HierarchyPage() {
     setUserError(null);
     let niveau: NiveauRattachement = '';
     let rattachement_id = '';
-    if (u.succursale_id) { niveau = 'succursale'; rattachement_id = String(u.succursale_id); }
+    if (u.sous_succursale_id) { niveau = 'sous_succursale'; rattachement_id = String(u.sous_succursale_id); }
+    else if (u.succursale_id) { niveau = 'succursale'; rattachement_id = String(u.succursale_id); }
     else if (u.direction_id) { niveau = 'direction'; rattachement_id = String(u.direction_id); }
     else if (u.service_id) { niveau = 'service'; rattachement_id = String(u.service_id); }
     else if (u.entreprise_id) { niveau = 'entreprise'; rattachement_id = String(u.entreprise_id); }
@@ -405,6 +410,7 @@ export default function HierarchyPage() {
         role: userModal.role,
         entreprise_id: userModal.niveau === 'entreprise' ? rid : null,
         succursale_id: userModal.niveau === 'succursale' ? rid : null,
+        sous_succursale_id: userModal.niveau === 'sous_succursale' ? rid : null,
         direction_id: userModal.niveau === 'direction' ? rid : null,
         service_id: userModal.niveau === 'service' ? rid : null,
       };

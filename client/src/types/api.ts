@@ -67,10 +67,12 @@ export interface Utilisateur {
   derniere_connexion?: string | null;
   entreprise_id?: number | null;
   succursale_id?: number | null;
+  sous_succursale_id?: number | null;
   direction_id?: number | null;
   service_id?: number | null;
   entreprise?: { id: number; nom: string; code?: string } | null;
   succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } | null;
+  sous_succursale?: { id: number; nom: string; succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } } | null;
   direction?: { id: number; nom: string; succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } } | null;
   service?: { id: number; nom: string; direction?: { id: number; nom: string; succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } } } | null;
 }

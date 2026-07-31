@@ -24,11 +24,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 });
 
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { entreprise_id, succursale_id, banque_id, numero_compte, iban, intitule, devise, solde_initial } = req.body as Record<string, unknown>;
+  const { entreprise_id, succursale_id, sous_succursale_id, banque_id, numero_compte, iban, intitule, devise, solde_initial } = req.body as Record<string, unknown>;
   try {
     const scope = await resolveOrgScope(req.user!);
     const effectiveEntrepriseId = scope.unrestricted ? Number(entreprise_id) : (scope.entrepriseId ?? Number(entreprise_id));
     const effectiveSuccursaleId = scope.unrestricted ? (succursale_id ? Number(succursale_id) : null) : scope.succursaleId;
+    const effectiveSousSuccursaleId = scope.unrestricted ? (sous_succursale_id ? Number(sous_succursale_id) : null) : scope.sousSuccursaleId;
 
     const [entreprise, banque] = await Promise.all([
       prisma.entreprise.findFirst({ where: { id: effectiveEntrepriseId, tenant_id: req.user!.tenantId } }),
@@ -41,6 +42,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       data: {
         entreprise_id: effectiveEntrepriseId,
         succursale_id: effectiveSuccursaleId,
+        sous_succursale_id: effectiveSousSuccursaleId,
         banque_id: Number(banque_id),
         numero_compte: String(numero_compte),
         iban: iban ? String(iban) : null,

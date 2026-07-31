@@ -206,7 +206,11 @@ model SousSuccursale {
   updated_at    DateTime    @updatedAt
   updated_by    Int?
 
-  succursale Succursale @relation(fields: [succursale_id], references: [id])
+  succursale           Succursale          @relation(fields: [succursale_id], references: [id])
+  utilisateurs         Utilisateur[]
+  banques              Banque[]
+  comptes_bancaires    CompteBancaire[]
+  ecritures_comptables EcritureComptable[]
 
   @@map("sous_succursales")
 }
@@ -254,6 +258,7 @@ model Utilisateur {
   tenant_id            Int
   entreprise_id        Int?
   succursale_id        Int?
+  sous_succursale_id   Int?
   direction_id         Int?
   service_id           Int?
   email                String          @db.VarChar(255)
@@ -272,13 +277,14 @@ model Utilisateur {
   updated_at           DateTime        @updatedAt
   updated_by           Int?
 
-  tenant         Tenant          @relation(fields: [tenant_id], references: [id])
-  entreprise     Entreprise?     @relation(fields: [entreprise_id], references: [id])
-  succursale     Succursale?     @relation(fields: [succursale_id], references: [id])
-  direction      Direction?      @relation(fields: [direction_id], references: [id])
-  service        Service?        @relation(fields: [service_id], references: [id])
-  logs_connexion LogConnexion[]
-  jobs           JobTraitement[]
+  tenant          Tenant          @relation(fields: [tenant_id], references: [id])
+  entreprise      Entreprise?     @relation(fields: [entreprise_id], references: [id])
+  succursale      Succursale?     @relation(fields: [succursale_id], references: [id])
+  sous_succursale SousSuccursale? @relation(fields: [sous_succursale_id], references: [id])
+  direction       Direction?      @relation(fields: [direction_id], references: [id])
+  service         Service?        @relation(fields: [service_id], references: [id])
+  logs_connexion  LogConnexion[]
+  jobs            JobTraitement[]
 
   @@unique([tenant_id, email])
   @@map("utilisateurs")
@@ -386,23 +392,25 @@ model PeriodeComptable {
 // restreignent sa visibilité au périmètre organisationnel correspondant — voir
 // server/src/utils/orgScope.ts pour l'application de cette règle en lecture.
 model Banque {
-  id            Int         @id @default(autoincrement())
-  tenant_id     Int
-  entreprise_id Int?
-  succursale_id Int?
-  code_swift    String?     @db.VarChar(20)
-  nom           String      @db.VarChar(200)
-  pays_code     String?     @db.VarChar(3)
-  etat          EtatGeneral @default(ACTIF)
-  created_at    DateTime    @default(now())
-  created_by    Int?
-  updated_at    DateTime    @updatedAt
-  updated_by    Int?
+  id                 Int         @id @default(autoincrement())
+  tenant_id          Int
+  entreprise_id      Int?
+  succursale_id      Int?
+  sous_succursale_id Int?
+  code_swift         String?     @db.VarChar(20)
+  nom                String      @db.VarChar(200)
+  pays_code          String?     @db.VarChar(3)
+  etat               EtatGeneral @default(ACTIF)
+  created_at         DateTime    @default(now())
+  created_by         Int?
+  updated_at         DateTime    @updatedAt
+  updated_by         Int?
 
-  entreprise Entreprise?            @relation(fields: [entreprise_id], references: [id])
-  succursale Succursale?            @relation(fields: [succursale_id], references: [id])
-  comptes    CompteBancaire[]
-  templates  BanqueReleveTemplate[]
+  entreprise      Entreprise?            @relation(fields: [entreprise_id], references: [id])
+  succursale      Succursale?            @relation(fields: [succursale_id], references: [id])
+  sous_succursale SousSuccursale?        @relation(fields: [sous_succursale_id], references: [id])
+  comptes         CompteBancaire[]
+  templates       BanqueReleveTemplate[]
 
   @@map("banques")
 }
@@ -427,23 +435,25 @@ model BanqueReleveTemplate {
 }
 
 model CompteBancaire {
-  id            Int         @id @default(autoincrement())
-  entreprise_id Int
-  succursale_id Int?
-  banque_id     Int
-  numero_compte String      @db.VarChar(50)
-  iban          String?     @db.VarChar(34)
-  intitule      String      @db.VarChar(200)
-  devise        String      @default("XOF") @db.VarChar(10)
-  solde_initial Decimal     @default(0) @db.Decimal(18, 2)
-  etat          EtatGeneral @default(ACTIF)
-  created_at    DateTime    @default(now())
-  created_by    Int?
-  updated_at    DateTime    @updatedAt
-  updated_by    Int?
+  id                 Int         @id @default(autoincrement())
+  entreprise_id      Int
+  succursale_id      Int?
+  sous_succursale_id Int?
+  banque_id          Int
+  numero_compte      String      @db.VarChar(50)
+  iban               String?     @db.VarChar(34)
+  intitule           String      @db.VarChar(200)
+  devise             String      @default("XOF") @db.VarChar(10)
+  solde_initial      Decimal     @default(0) @db.Decimal(18, 2)
+  etat               EtatGeneral @default(ACTIF)
+  created_at         DateTime    @default(now())
+  created_by         Int?
+  updated_at         DateTime    @updatedAt
+  updated_by         Int?
 
   entreprise        Entreprise            @relation(fields: [entreprise_id], references: [id])
   succursale        Succursale?           @relation(fields: [succursale_id], references: [id])
+  sous_succursale   SousSuccursale?       @relation(fields: [sous_succursale_id], references: [id])
   banque            Banque                @relation(fields: [banque_id], references: [id])
   ecritures         EcritureComptable[]
   releve_lignes     ReleveBancaireLigne[]
@@ -501,6 +511,7 @@ model EcritureComptable {
   id                 Int          @id @default(autoincrement())
   entreprise_id      Int
   succursale_id      Int?
+  sous_succursale_id Int?
   compte_bancaire_id Int?
   reference          String       @db.VarChar(100)
   libelle            String       @db.Text
@@ -523,6 +534,7 @@ model EcritureComptable {
 
   entreprise      Entreprise      @relation(fields: [entreprise_id], references: [id])
   succursale      Succursale?     @relation(fields: [succursale_id], references: [id])
+  sous_succursale SousSuccursale? @relation(fields: [sous_succursale_id], references: [id])
   compte_bancaire CompteBancaire? @relation(fields: [compte_bancaire_id], references: [id])
 
   @@index([entreprise_id, periode_mois, periode_annee])

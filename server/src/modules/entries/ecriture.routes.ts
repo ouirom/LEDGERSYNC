@@ -68,12 +68,14 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   }
 
   let succursale_id: number | null = scope.succursaleId ?? null;
+  let sous_succursale_id: number | null = scope.sousSuccursaleId ?? null;
   if (parsed.data.compte_bancaire_id) {
     const compte = await prisma.compteBancaire.findFirst({
       where: { id: parsed.data.compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
     });
     if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
     succursale_id = compte.succursale_id;
+    sous_succursale_id = compte.sous_succursale_id;
   }
 
   if (await isPeriodeLocked(parsed.data.entreprise_id, parsed.data.periode_mois, parsed.data.periode_annee)) {
@@ -85,6 +87,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
       data: {
         ...parsed.data,
         succursale_id,
+        sous_succursale_id,
         date_ecriture: new Date(parsed.data.date_ecriture),
         date_valeur: parsed.data.date_valeur ? new Date(parsed.data.date_valeur) : null,
         etat: 'BROUILLON',
@@ -170,6 +173,7 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
   if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
   const entreprise_id = compte.entreprise_id;
   const succursale_id = compte.succursale_id;
+  const sous_succursale_id = compte.sous_succursale_id;
 
   try {
     const rowsPerFile = await Promise.all(files.map(f => parseSourceFile(f.path)));
@@ -200,6 +204,7 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
         data: {
           entreprise_id,
           succursale_id,
+          sous_succursale_id,
           compte_bancaire_id,
           reference,
           libelle: getLibelle(row),
@@ -258,6 +263,7 @@ router.post('/:id/extourne', async (req: AuthRequest, res: Response): Promise<vo
         data: {
           entreprise_id: ecriture.entreprise_id,
           succursale_id: ecriture.succursale_id,
+          sous_succursale_id: ecriture.sous_succursale_id,
           compte_bancaire_id: ecriture.compte_bancaire_id,
           reference: `EXT-${ecriture.reference}`,
           libelle: `EXTOURNE: ${ecriture.libelle}`,

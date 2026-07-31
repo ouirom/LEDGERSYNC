@@ -716,6 +716,136 @@ async function main() {
   });
   console.log('✅ Utilisateur direction (Finance) créé/vérifié:', directionFinanceUser.email);
 
+  // ── Sous-succursale (Agence Dakar Plateau, sous Siège Dakar) ──
+  let agencePlateau = await prisma.sousSuccursale.findFirst({ where: { succursale_id: siege.id, code: 'PLATEAU' } });
+  if (!agencePlateau) {
+    agencePlateau = await prisma.sousSuccursale.create({
+      data: { succursale_id: siege.id, nom: 'Agence Dakar Plateau', code: 'PLATEAU', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Sous-succursale créée/vérifiée:', agencePlateau.nom);
+
+  let banquePlateau = await prisma.banque.findFirst({ where: { tenant_id: tenant.id, code_swift: 'CBSASNPL' } });
+  if (!banquePlateau) {
+    banquePlateau = await prisma.banque.create({
+      data: { tenant_id: tenant.id, entreprise_id: entreprise.id, succursale_id: siege.id, sous_succursale_id: agencePlateau.id, code_swift: 'CBSASNPL', nom: 'Banque de Dakar — Agence Plateau', pays_code: 'SN', etat: 'ACTIF', created_by: 1, updated_by: 1 },
+    });
+  }
+  console.log('✅ Banque créée/vérifiée:', banquePlateau.nom);
+
+  let comptePlateau = await prisma.compteBancaire.findFirst({ where: { entreprise_id: entreprise.id, numero_compte: 'SN28-0004-0000-0334455667' } });
+  if (!comptePlateau) {
+    comptePlateau = await prisma.compteBancaire.create({
+      data: {
+        entreprise_id: entreprise.id,
+        succursale_id: siege.id,
+        sous_succursale_id: agencePlateau.id,
+        banque_id: banquePlateau.id,
+        numero_compte: 'SN28-0004-0000-0334455667',
+        intitule: 'Compte Agence Plateau XOF',
+        devise: 'XOF',
+        solde_initial: 5000000,
+        etat: 'ACTIF',
+        created_by: 1,
+        updated_by: 1,
+      },
+    });
+  }
+  console.log('✅ Compte Bancaire créé/vérifié:', comptePlateau.intitule);
+
+  const ecrituresPlateau = [
+    { reference: 'PLT-2026-001', libelle: 'Encaissement guichet Plateau', montant: 275000, type: 'CREDIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 6) },
+    { reference: 'PLT-2026-002', libelle: 'Retrait espèces client', montant: 120000, type: 'DEBIT' as const, date_ecriture: new Date(now.getFullYear(), now.getMonth(), 13) },
+  ];
+  let ecrituresPlateauCreees = 0;
+  for (const e of ecrituresPlateau) {
+    const found = await prisma.ecritureComptable.findFirst({ where: { compte_bancaire_id: comptePlateau.id, reference: e.reference } });
+    if (found) continue;
+    await prisma.ecritureComptable.create({
+      data: { entreprise_id: entreprise.id, succursale_id: siege.id, sous_succursale_id: agencePlateau.id, compte_bancaire_id: comptePlateau.id, ...e, periode_mois: now.getMonth() + 1, periode_annee: now.getFullYear(), etat: 'VALIDE', created_by: 1, updated_by: 1 },
+    });
+    ecrituresPlateauCreees++;
+  }
+  console.log(`✅ Compte Agence Plateau : ${ecrituresPlateauCreees}/${ecrituresPlateau.length} écritures créées (déjà présentes ignorées)`);
+
+  const sousSuccursaleHash = await bcrypt.hash('SousSuccursale@2026!', 12);
+  const sousSuccursalePlateauUser = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'sous-succursale.plateau@ledgersync.demo' } },
+    update: { sous_succursale_id: agencePlateau.id, entreprise_id: null, succursale_id: null, direction_id: null, service_id: null },
+    create: {
+      tenant_id: tenant.id,
+      sous_succursale_id: agencePlateau.id,
+      email: 'sous-succursale.plateau@ledgersync.demo',
+      nom: 'BA',
+      prenom: 'Ibrahima',
+      password_hash: sousSuccursaleHash,
+      role: 'MANAGER',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Utilisateur sous-succursale (Plateau) créé/vérifié:', sousSuccursalePlateauUser.email);
+
+  // ── Administrateurs (ADMIN_TENANT) rattachés à différents niveaux ──
+  // Contrairement à SUPER_ADMIN (toujours non restreint), un ADMIN_TENANT ne
+  // gère et ne voit (utilisateurs, banques, comptes, écritures) que le
+  // périmètre de son propre rattachement — voir server/src/utils/orgScope.ts.
+  const adminHash = await bcrypt.hash('AdminTenant@2026!', 12);
+  const adminEntrepriseUser = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'admin.entreprise@ledgersync.demo' } },
+    update: { entreprise_id: entreprise.id, succursale_id: null, sous_succursale_id: null, direction_id: null, service_id: null },
+    create: {
+      tenant_id: tenant.id,
+      entreprise_id: entreprise.id,
+      email: 'admin.entreprise@ledgersync.demo',
+      nom: 'SECK',
+      prenom: 'Mariama',
+      password_hash: adminHash,
+      role: 'ADMIN_TENANT',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Admin entreprise créé/vérifié:', adminEntrepriseUser.email);
+
+  const adminSuccursaleUser = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'admin.succursale@ledgersync.demo' } },
+    update: { succursale_id: siege.id, entreprise_id: null, sous_succursale_id: null, direction_id: null, service_id: null },
+    create: {
+      tenant_id: tenant.id,
+      succursale_id: siege.id,
+      email: 'admin.succursale@ledgersync.demo',
+      nom: 'NIANG',
+      prenom: 'Babacar',
+      password_hash: adminHash,
+      role: 'ADMIN_TENANT',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Admin succursale créé/vérifié:', adminSuccursaleUser.email);
+
+  const adminSousSuccursaleUser = await prisma.utilisateur.upsert({
+    where: { tenant_id_email: { tenant_id: tenant.id, email: 'admin.sous-succursale@ledgersync.demo' } },
+    update: { sous_succursale_id: agencePlateau.id, entreprise_id: null, succursale_id: null, direction_id: null, service_id: null },
+    create: {
+      tenant_id: tenant.id,
+      sous_succursale_id: agencePlateau.id,
+      email: 'admin.sous-succursale@ledgersync.demo',
+      nom: 'FAYE',
+      prenom: 'Coumba',
+      password_hash: adminHash,
+      role: 'ADMIN_TENANT',
+      etat: 'ACTIF',
+      created_by: 1,
+      updated_by: 1,
+    },
+  });
+  console.log('✅ Admin sous-succursale créé/vérifié:', adminSousSuccursaleUser.email);
+
   // ============================================================
   // ENTREPRISE 2 : CÔTE D'IVOIRE (démonstration multi-entreprise / multi-pays)
   // ============================================================
@@ -941,11 +1071,16 @@ async function main() {
   console.log('   Comptable CI: comptable.ci@ledgersync.demo / User@2026!');
   console.log('   Manager CI  : manager.ci@ledgersync.demo / Manager@2026!');
   console.log('\n📋 Comptes de test — rattachement multi-niveau (isolation des données) :');
-  console.log('   Succursale Dakar  : succursale.dakar@ledgersync.demo / Succursale@2026! (voit uniquement le Siège Dakar)');
-  console.log('   Succursale Thiès  : succursale.thies@ledgersync.demo / Succursale@2026! (voit uniquement la Succursale Thiès)');
-  console.log('   Direction Finance : direction.finance@ledgersync.demo / Direction@2026! (voit le Siège Dakar via la Direction Financière)');
-  console.log('\n🏢 Hiérarchie SN : Siège Dakar (Direction Financière, Direction Commerciale) + Succursale Thiès');
-  console.log('🏦 Banques SN    : Banque de Dakar + Ecobank Sénégal (Siège Dakar), Banque Atlantique Thiès (Succursale Thiès)');
+  console.log('   Succursale Dakar     : succursale.dakar@ledgersync.demo / Succursale@2026! (voit uniquement le Siège Dakar)');
+  console.log('   Succursale Thiès     : succursale.thies@ledgersync.demo / Succursale@2026! (voit uniquement la Succursale Thiès)');
+  console.log('   Direction Finance    : direction.finance@ledgersync.demo / Direction@2026! (voit le Siège Dakar via la Direction Financière)');
+  console.log('   Sous-succ. Plateau   : sous-succursale.plateau@ledgersync.demo / SousSuccursale@2026! (voit uniquement l\'Agence Dakar Plateau)');
+  console.log('\n📋 Comptes de test — administrateurs (ADMIN_TENANT) scopés par rattachement :');
+  console.log('   Admin Entreprise     : admin.entreprise@ledgersync.demo / AdminTenant@2026! (gère tous les utilisateurs de SARL Démo Finances)');
+  console.log('   Admin Succursale     : admin.succursale@ledgersync.demo / AdminTenant@2026! (gère uniquement les utilisateurs du Siège Dakar)');
+  console.log('   Admin Sous-succ.     : admin.sous-succursale@ledgersync.demo / AdminTenant@2026! (gère uniquement les utilisateurs de l\'Agence Dakar Plateau)');
+  console.log('\n🏢 Hiérarchie SN : Siège Dakar (Direction Financière, Direction Commerciale, Agence Plateau) + Succursale Thiès');
+  console.log('🏦 Banques SN    : Banque de Dakar + Ecobank Sénégal (Siège Dakar), Banque Agence Plateau (Agence Plateau), Banque Atlantique Thiès (Succursale Thiès)');
   console.log("\n🏢 Hiérarchie CI : Siège Abidjan > Direction Financière (Comptabilité) / Direction Commerciale (Ventes)");
   console.log("🏦 Banque CI     : Société Générale Côte d'Ivoire (Compte Principal CFA)");
 }
