@@ -75,21 +75,21 @@ enum TypeFichier {
 // THEMES (Personnalisation UI)
 // ============================================================
 model Theme {
-  id              Int          @id @default(autoincrement())
-  nom             String       @db.VarChar(100)
-  couleur_primaire   String    @db.VarChar(7)
-  couleur_secondaire String    @db.VarChar(7)
-  couleur_accent     String    @db.VarChar(7)
-  logo_url        String?      @db.VarChar(500)
-  mode_sombre     Boolean      @default(false)
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id                 Int         @id @default(autoincrement())
+  nom                String      @db.VarChar(100)
+  couleur_primaire   String      @db.VarChar(7)
+  couleur_secondaire String      @db.VarChar(7)
+  couleur_accent     String      @db.VarChar(7)
+  logo_url           String?     @db.VarChar(500)
+  mode_sombre        Boolean     @default(false)
+  etat               EtatGeneral @default(BROUILLON)
+  created_at         DateTime    @default(now())
+  created_by         Int?
+  updated_at         DateTime    @updatedAt
+  updated_by         Int?
 
-  tenants         Tenant[]
-  entreprises     Entreprise[]
+  tenants     Tenant[]
+  entreprises Entreprise[]
 
   @@map("themes")
 }
@@ -98,21 +98,21 @@ model Theme {
 // TENANTS (Multi-Tenant)
 // ============================================================
 model Tenant {
-  id              Int          @id @default(autoincrement())
-  code            String       @unique @db.VarChar(20)
-  nom             String       @db.VarChar(200)
-  domaine         String?      @unique @db.VarChar(100)
-  theme_id        Int?
-  plan            String       @default("STANDARD") @db.VarChar(50)
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id         Int         @id @default(autoincrement())
+  code       String      @unique @db.VarChar(20)
+  nom        String      @db.VarChar(200)
+  domaine    String?     @unique @db.VarChar(100)
+  theme_id   Int?
+  plan       String      @default("STANDARD") @db.VarChar(50)
+  etat       EtatGeneral @default(BROUILLON)
+  created_at DateTime    @default(now())
+  created_by Int?
+  updated_at DateTime    @updatedAt
+  updated_by Int?
 
-  theme           Theme?       @relation(fields: [theme_id], references: [id])
-  entreprises     Entreprise[]
-  utilisateurs    Utilisateur[]
+  theme        Theme?        @relation(fields: [theme_id], references: [id])
+  entreprises  Entreprise[]
+  utilisateurs Utilisateur[]
 
   @@map("tenants")
 }
@@ -121,17 +121,17 @@ model Tenant {
 // PAYS
 // ============================================================
 model Pays {
-  id              Int          @id @default(autoincrement())
-  code_iso        String       @unique @db.VarChar(3)
-  nom             String       @db.VarChar(100)
-  devise          String       @db.VarChar(10)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id         Int         @id @default(autoincrement())
+  code_iso   String      @unique @db.VarChar(3)
+  nom        String      @db.VarChar(100)
+  devise     String      @db.VarChar(10)
+  etat       EtatGeneral @default(ACTIF)
+  created_at DateTime    @default(now())
+  created_by Int?
+  updated_at DateTime    @updatedAt
+  updated_by Int?
 
-  entreprises     Entreprise[]
+  entreprises Entreprise[]
 
   @@map("pays")
 }
@@ -140,30 +140,31 @@ model Pays {
 // ENTREPRISES
 // ============================================================
 model Entreprise {
-  id              Int          @id @default(autoincrement())
-  tenant_id       Int
-  pays_id         Int?
-  theme_id        Int?
-  code            String       @db.VarChar(20)
-  nom             String       @db.VarChar(200)
-  siret           String?      @db.VarChar(50)
-  adresse         String?      @db.Text
-  logo_url        String?      @db.VarChar(500)
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id         Int         @id @default(autoincrement())
+  tenant_id  Int
+  pays_id    Int?
+  theme_id   Int?
+  code       String      @db.VarChar(20)
+  nom        String      @db.VarChar(200)
+  siret      String?     @db.VarChar(50)
+  adresse    String?     @db.Text
+  logo_url   String?     @db.VarChar(500)
+  etat       EtatGeneral @default(BROUILLON)
+  created_at DateTime    @default(now())
+  created_by Int?
+  updated_at DateTime    @updatedAt
+  updated_by Int?
 
-  tenant          Tenant       @relation(fields: [tenant_id], references: [id])
-  pays            Pays?        @relation(fields: [pays_id], references: [id])
-  theme           Theme?       @relation(fields: [theme_id], references: [id])
-  succursales     Succursale[]
-  periodes_comptables PeriodeComptable[]
-  comptes_bancaires   CompteBancaire[]
+  tenant               Tenant              @relation(fields: [tenant_id], references: [id])
+  pays                 Pays?               @relation(fields: [pays_id], references: [id])
+  theme                Theme?              @relation(fields: [theme_id], references: [id])
+  succursales          Succursale[]
+  periodes_comptables  PeriodeComptable[]
+  banques              Banque[]
+  comptes_bancaires    CompteBancaire[]
   ecritures_comptables EcritureComptable[]
-  rapprochements  Rapprochement[]
-  utilisateurs    Utilisateur[]
+  rapprochements       Rapprochement[]
+  utilisateurs         Utilisateur[]
 
   @@unique([tenant_id, code])
   @@map("entreprises")
@@ -173,69 +174,74 @@ model Entreprise {
 // STRUCTURE ORGANISATIONNELLE
 // ============================================================
 model Succursale {
-  id              Int          @id @default(autoincrement())
-  entreprise_id   Int
-  nom             String       @db.VarChar(200)
-  code            String       @db.VarChar(20)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  entreprise_id Int
+  nom           String      @db.VarChar(200)
+  code          String      @db.VarChar(20)
+  etat          EtatGeneral @default(ACTIF)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  entreprise      Entreprise   @relation(fields: [entreprise_id], references: [id])
-  sous_succursales SousSuccursale[]
-  directions      Direction[]
+  entreprise           Entreprise          @relation(fields: [entreprise_id], references: [id])
+  sous_succursales     SousSuccursale[]
+  directions           Direction[]
+  utilisateurs         Utilisateur[]
+  banques              Banque[]
+  comptes_bancaires    CompteBancaire[]
+  ecritures_comptables EcritureComptable[]
 
   @@map("succursales")
 }
 
 model SousSuccursale {
-  id              Int          @id @default(autoincrement())
-  succursale_id   Int
-  nom             String       @db.VarChar(200)
-  code            String       @db.VarChar(20)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  succursale_id Int
+  nom           String      @db.VarChar(200)
+  code          String      @db.VarChar(20)
+  etat          EtatGeneral @default(ACTIF)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  succursale      Succursale   @relation(fields: [succursale_id], references: [id])
+  succursale Succursale @relation(fields: [succursale_id], references: [id])
 
   @@map("sous_succursales")
 }
 
 model Direction {
-  id              Int          @id @default(autoincrement())
-  succursale_id   Int
-  nom             String       @db.VarChar(200)
-  code            String       @db.VarChar(20)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  succursale_id Int
+  nom           String      @db.VarChar(200)
+  code          String      @db.VarChar(20)
+  etat          EtatGeneral @default(ACTIF)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  succursale      Succursale   @relation(fields: [succursale_id], references: [id])
-  services        Service[]
+  succursale   Succursale    @relation(fields: [succursale_id], references: [id])
+  services     Service[]
+  utilisateurs Utilisateur[]
 
   @@map("directions")
 }
 
 model Service {
-  id              Int          @id @default(autoincrement())
-  direction_id    Int
-  nom             String       @db.VarChar(200)
-  code            String       @db.VarChar(20)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id           Int         @id @default(autoincrement())
+  direction_id Int
+  nom          String      @db.VarChar(200)
+  code         String      @db.VarChar(20)
+  etat         EtatGeneral @default(ACTIF)
+  created_at   DateTime    @default(now())
+  created_by   Int?
+  updated_at   DateTime    @updatedAt
+  updated_by   Int?
 
-  direction       Direction    @relation(fields: [direction_id], references: [id])
-  utilisateurs    Utilisateur[]
+  direction    Direction     @relation(fields: [direction_id], references: [id])
+  utilisateurs Utilisateur[]
 
   @@map("services")
 }
@@ -244,31 +250,35 @@ model Service {
 // UTILISATEURS
 // ============================================================
 model Utilisateur {
-  id              Int              @id @default(autoincrement())
-  tenant_id       Int
-  entreprise_id   Int?
-  service_id      Int?
-  email           String           @db.VarChar(255)
-  nom             String           @db.VarChar(100)
-  prenom          String           @db.VarChar(100)
-  password_hash   String           @db.VarChar(255)
-  role            RoleUtilisateur  @default(USER)
-  refresh_token   String?          @db.Text
-  reset_token_hash String?         @db.VarChar(255)
-  reset_token_expires DateTime?
-  must_change_password Boolean     @default(false)
-  derniere_connexion DateTime?
-  etat            EtatGeneral      @default(ACTIF)
-  created_at      DateTime         @default(now())
-  created_by      Int?
-  updated_at      DateTime         @updatedAt
-  updated_by      Int?
+  id                   Int             @id @default(autoincrement())
+  tenant_id            Int
+  entreprise_id        Int?
+  succursale_id        Int?
+  direction_id         Int?
+  service_id           Int?
+  email                String          @db.VarChar(255)
+  nom                  String          @db.VarChar(100)
+  prenom               String          @db.VarChar(100)
+  password_hash        String          @db.VarChar(255)
+  role                 RoleUtilisateur @default(USER)
+  refresh_token        String?         @db.Text
+  reset_token_hash     String?         @db.VarChar(255)
+  reset_token_expires  DateTime?
+  must_change_password Boolean         @default(false)
+  derniere_connexion   DateTime?
+  etat                 EtatGeneral     @default(ACTIF)
+  created_at           DateTime        @default(now())
+  created_by           Int?
+  updated_at           DateTime        @updatedAt
+  updated_by           Int?
 
-  tenant          Tenant           @relation(fields: [tenant_id], references: [id])
-  entreprise      Entreprise?      @relation(fields: [entreprise_id], references: [id])
-  service         Service?         @relation(fields: [service_id], references: [id])
-  logs_connexion  LogConnexion[]
-  jobs            JobTraitement[]
+  tenant         Tenant          @relation(fields: [tenant_id], references: [id])
+  entreprise     Entreprise?     @relation(fields: [entreprise_id], references: [id])
+  succursale     Succursale?     @relation(fields: [succursale_id], references: [id])
+  direction      Direction?      @relation(fields: [direction_id], references: [id])
+  service        Service?        @relation(fields: [service_id], references: [id])
+  logs_connexion LogConnexion[]
+  jobs           JobTraitement[]
 
   @@unique([tenant_id, email])
   @@map("utilisateurs")
@@ -278,39 +288,39 @@ model Utilisateur {
 // LOGS
 // ============================================================
 model LogConnexion {
-  id              Int          @id @default(autoincrement())
-  utilisateur_id  Int
-  ip_address      String?      @db.VarChar(45)
-  user_agent      String?      @db.Text
-  succes          Boolean
-  motif_echec     String?      @db.VarChar(255)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id             Int         @id @default(autoincrement())
+  utilisateur_id Int
+  ip_address     String?     @db.VarChar(45)
+  user_agent     String?     @db.Text
+  succes         Boolean
+  motif_echec    String?     @db.VarChar(255)
+  etat           EtatGeneral @default(ACTIF)
+  created_at     DateTime    @default(now())
+  created_by     Int?
+  updated_at     DateTime    @updatedAt
+  updated_by     Int?
 
-  utilisateur     Utilisateur  @relation(fields: [utilisateur_id], references: [id])
+  utilisateur Utilisateur @relation(fields: [utilisateur_id], references: [id])
 
   @@map("logs_connexion")
 }
 
 model LogTraitement {
-  id              Int          @id @default(autoincrement())
-  tenant_id       Int
-  utilisateur_id  Int?
-  entite          String       @db.VarChar(100)
-  entite_id       Int?
-  action          String       @db.VarChar(100)
-  avant           Json?
-  apres           Json?
-  motif           String?      @db.Text
-  ip_address      String?      @db.VarChar(45)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id             Int         @id @default(autoincrement())
+  tenant_id      Int
+  utilisateur_id Int?
+  entite         String      @db.VarChar(100)
+  entite_id      Int?
+  action         String      @db.VarChar(100)
+  avant          Json?
+  apres          Json?
+  motif          String?     @db.Text
+  ip_address     String?     @db.VarChar(45)
+  etat           EtatGeneral @default(ACTIF)
+  created_at     DateTime    @default(now())
+  created_by     Int?
+  updated_at     DateTime    @updatedAt
+  updated_by     Int?
 
   @@map("logs_traitement")
 }
@@ -319,28 +329,28 @@ model LogTraitement {
 // JOBS ASYNCHRONES (BullMQ)
 // ============================================================
 model JobTraitement {
-  id                    Int         @id @default(autoincrement())
-  tenant_id             Int
-  utilisateur_id        Int?
-  bull_job_id           String?     @db.VarChar(100)
-  type_job              String      @db.VarChar(100)
-  nom_fichier           String?     @db.VarChar(255)
-  total_lignes          Int         @default(0)
-  lignes_traitees       Int         @default(0)
-  index_derniere_ligne  Int         @default(0)
-  progression           Float       @default(0)
-  statut                StatutJob   @default(EN_ATTENTE)
-  message_erreur        String?     @db.Text
-  resultat              Json?
-  etat                  EtatGeneral @default(BROUILLON)
-  created_at            DateTime    @default(now())
-  created_by            Int?
-  updated_at            DateTime    @updatedAt
-  updated_by            Int?
+  id                   Int         @id @default(autoincrement())
+  tenant_id            Int
+  utilisateur_id       Int?
+  bull_job_id          String?     @db.VarChar(100)
+  type_job             String      @db.VarChar(100)
+  nom_fichier          String?     @db.VarChar(255)
+  total_lignes         Int         @default(0)
+  lignes_traitees      Int         @default(0)
+  index_derniere_ligne Int         @default(0)
+  progression          Float       @default(0)
+  statut               StatutJob   @default(EN_ATTENTE)
+  message_erreur       String?     @db.Text
+  resultat             Json?
+  etat                 EtatGeneral @default(BROUILLON)
+  created_at           DateTime    @default(now())
+  created_by           Int?
+  updated_at           DateTime    @updatedAt
+  updated_by           Int?
 
-  utilisateur           Utilisateur? @relation(fields: [utilisateur_id], references: [id])
-  fichiers_sources      FichierSource[]
-  releves_bancaires     ReleveBancaire[]
+  utilisateur       Utilisateur?     @relation(fields: [utilisateur_id], references: [id])
+  fichiers_sources  FichierSource[]
+  releves_bancaires ReleveBancaire[]
 
   @@map("jobs_traitements")
 }
@@ -349,20 +359,20 @@ model JobTraitement {
 // PERIODES COMPTABLES
 // ============================================================
 model PeriodeComptable {
-  id              Int             @id @default(autoincrement())
-  entreprise_id   Int
-  mois            Int
-  annee           Int
-  statut          StatutPeriode   @default(OUVERT)
-  date_cloture    DateTime?
-  clos_par        Int?
-  etat            EtatGeneral     @default(ACTIF)
-  created_at      DateTime        @default(now())
-  created_by      Int?
-  updated_at      DateTime        @updatedAt
-  updated_by      Int?
+  id            Int           @id @default(autoincrement())
+  entreprise_id Int
+  mois          Int
+  annee         Int
+  statut        StatutPeriode @default(OUVERT)
+  date_cloture  DateTime?
+  clos_par      Int?
+  etat          EtatGeneral   @default(ACTIF)
+  created_at    DateTime      @default(now())
+  created_by    Int?
+  updated_at    DateTime      @updatedAt
+  updated_by    Int?
 
-  entreprise      Entreprise      @relation(fields: [entreprise_id], references: [id])
+  entreprise Entreprise @relation(fields: [entreprise_id], references: [id])
 
   @@unique([entreprise_id, mois, annee])
   @@map("periodes_comptables")
@@ -371,64 +381,74 @@ model PeriodeComptable {
 // ============================================================
 // BANQUES & COMPTES
 // ============================================================
+// entreprise_id/succursale_id sont optionnels : une banque sans rattachement
+// reste visible dans tout le tenant (cas historique/partagé) ; renseignés, ils
+// restreignent sa visibilité au périmètre organisationnel correspondant — voir
+// server/src/utils/orgScope.ts pour l'application de cette règle en lecture.
 model Banque {
-  id              Int          @id @default(autoincrement())
-  tenant_id       Int
-  code_swift      String?      @db.VarChar(20)
-  nom             String       @db.VarChar(200)
-  pays_code       String?      @db.VarChar(3)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  tenant_id     Int
+  entreprise_id Int?
+  succursale_id Int?
+  code_swift    String?     @db.VarChar(20)
+  nom           String      @db.VarChar(200)
+  pays_code     String?     @db.VarChar(3)
+  etat          EtatGeneral @default(ACTIF)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  comptes         CompteBancaire[]
-  templates       BanqueReleveTemplate[]
+  entreprise Entreprise?            @relation(fields: [entreprise_id], references: [id])
+  succursale Succursale?            @relation(fields: [succursale_id], references: [id])
+  comptes    CompteBancaire[]
+  templates  BanqueReleveTemplate[]
 
   @@map("banques")
 }
 
 model BanqueReleveTemplate {
-  id              Int          @id @default(autoincrement())
-  banque_id       Int
-  nom             String       @db.VarChar(100)
+  id               Int         @id @default(autoincrement())
+  banque_id        Int
+  nom              String      @db.VarChar(100)
   mapping_colonnes Json
-  ligne_entete    Int          @default(1)
-  separateur      String?      @db.VarChar(5)
-  format_date     String       @db.VarChar(30)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  ligne_entete     Int         @default(1)
+  separateur       String?     @db.VarChar(5)
+  format_date      String      @db.VarChar(30)
+  etat             EtatGeneral @default(ACTIF)
+  created_at       DateTime    @default(now())
+  created_by       Int?
+  updated_at       DateTime    @updatedAt
+  updated_by       Int?
 
-  banque          Banque       @relation(fields: [banque_id], references: [id])
+  banque Banque @relation(fields: [banque_id], references: [id])
 
   @@map("banque_releve_templates")
 }
 
 model CompteBancaire {
-  id              Int          @id @default(autoincrement())
-  entreprise_id   Int
-  banque_id       Int
-  numero_compte   String       @db.VarChar(50)
-  iban            String?      @db.VarChar(34)
-  intitule        String       @db.VarChar(200)
-  devise          String       @default("XOF") @db.VarChar(10)
-  solde_initial   Decimal      @default(0) @db.Decimal(18, 2)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  entreprise_id Int
+  succursale_id Int?
+  banque_id     Int
+  numero_compte String      @db.VarChar(50)
+  iban          String?     @db.VarChar(34)
+  intitule      String      @db.VarChar(200)
+  devise        String      @default("XOF") @db.VarChar(10)
+  solde_initial Decimal     @default(0) @db.Decimal(18, 2)
+  etat          EtatGeneral @default(ACTIF)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  entreprise      Entreprise   @relation(fields: [entreprise_id], references: [id])
-  banque          Banque       @relation(fields: [banque_id], references: [id])
-  ecritures       EcritureComptable[]
-  releve_lignes   ReleveBancaireLigne[]
+  entreprise        Entreprise            @relation(fields: [entreprise_id], references: [id])
+  succursale        Succursale?           @relation(fields: [succursale_id], references: [id])
+  banque            Banque                @relation(fields: [banque_id], references: [id])
+  ecritures         EcritureComptable[]
+  releve_lignes     ReleveBancaireLigne[]
   releves_bancaires ReleveBancaire[]
-  rapprochements  Rapprochement[]
+  rapprochements    Rapprochement[]
 
   @@map("comptes_bancaires")
 }
@@ -438,22 +458,22 @@ model CompteBancaire {
 // une seule entité consultable. Une banque (via ses comptes) peut en avoir
 // plusieurs ; chaque relevé peut couvrir plusieurs pages (nb_pages).
 model ReleveBancaire {
-  id                 Int          @id @default(autoincrement())
+  id                 Int         @id @default(autoincrement())
   compte_bancaire_id Int
   job_id             Int?
-  reference          String?      @db.VarChar(100)
-  date_debut         DateTime?    @db.Date
-  date_fin           DateTime?    @db.Date
-  nb_pages           Int          @default(1)
-  etat               EtatGeneral  @default(BROUILLON)
-  created_at         DateTime     @default(now())
+  reference          String?     @db.VarChar(100)
+  date_debut         DateTime?   @db.Date
+  date_fin           DateTime?   @db.Date
+  nb_pages           Int         @default(1)
+  etat               EtatGeneral @default(BROUILLON)
+  created_at         DateTime    @default(now())
   created_by         Int?
-  updated_at         DateTime     @updatedAt
+  updated_at         DateTime    @updatedAt
   updated_by         Int?
 
-  compte_bancaire    CompteBancaire        @relation(fields: [compte_bancaire_id], references: [id])
-  job                JobTraitement?        @relation(fields: [job_id], references: [id])
-  lignes             ReleveBancaireLigne[]
+  compte_bancaire CompteBancaire        @relation(fields: [compte_bancaire_id], references: [id])
+  job             JobTraitement?        @relation(fields: [job_id], references: [id])
+  lignes          ReleveBancaireLigne[]
 
   @@map("releves_bancaires")
 }
@@ -462,45 +482,47 @@ model ReleveBancaire {
 // ECRITURES COMPTABLES
 // ============================================================
 model ImputationCategorie {
-  id              Int          @id @default(autoincrement())
-  tenant_id       Int
-  code            String       @db.VarChar(20)
-  libelle         String       @db.VarChar(200)
-  type            TypeEcriture
-  compte_imputation String?    @db.VarChar(20)
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id                Int          @id @default(autoincrement())
+  tenant_id         Int
+  code              String       @db.VarChar(20)
+  libelle           String       @db.VarChar(200)
+  type              TypeEcriture
+  compte_imputation String?      @db.VarChar(20)
+  etat              EtatGeneral  @default(ACTIF)
+  created_at        DateTime     @default(now())
+  created_by        Int?
+  updated_at        DateTime     @updatedAt
+  updated_by        Int?
 
   @@map("imputations_categories")
 }
 
 model EcritureComptable {
-  id              Int          @id @default(autoincrement())
-  entreprise_id   Int
+  id                 Int          @id @default(autoincrement())
+  entreprise_id      Int
+  succursale_id      Int?
   compte_bancaire_id Int?
-  reference       String       @db.VarChar(100)
-  libelle         String       @db.Text
-  montant         Decimal      @db.Decimal(18, 2)
-  type            TypeEcriture
-  date_ecriture   DateTime     @db.Date
-  date_valeur     DateTime?    @db.Date
-  piece_ref       String?      @db.VarChar(100)
-  lettrage_ref    String?      @db.VarChar(50)
-  lettree         Boolean      @default(false)
-  periode_mois    Int
-  periode_annee   Int
-  extourne_de     Int?
-  motif_annulation String?     @db.Text
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  reference          String       @db.VarChar(100)
+  libelle            String       @db.Text
+  montant            Decimal      @db.Decimal(18, 2)
+  type               TypeEcriture
+  date_ecriture      DateTime     @db.Date
+  date_valeur        DateTime?    @db.Date
+  piece_ref          String?      @db.VarChar(100)
+  lettrage_ref       String?      @db.VarChar(50)
+  lettree            Boolean      @default(false)
+  periode_mois       Int
+  periode_annee      Int
+  extourne_de        Int?
+  motif_annulation   String?      @db.Text
+  etat               EtatGeneral  @default(BROUILLON)
+  created_at         DateTime     @default(now())
+  created_by         Int?
+  updated_at         DateTime     @updatedAt
+  updated_by         Int?
 
-  entreprise      Entreprise   @relation(fields: [entreprise_id], references: [id])
+  entreprise      Entreprise      @relation(fields: [entreprise_id], references: [id])
+  succursale      Succursale?     @relation(fields: [succursale_id], references: [id])
   compte_bancaire CompteBancaire? @relation(fields: [compte_bancaire_id], references: [id])
 
   @@index([entreprise_id, periode_mois, periode_annee])
@@ -512,24 +534,24 @@ model EcritureComptable {
 // RELEVE BANCAIRE
 // ============================================================
 model ReleveBancaireLigne {
-  id              Int          @id @default(autoincrement())
+  id                 Int          @id @default(autoincrement())
   compte_bancaire_id Int
   releve_bancaire_id Int?
-  job_id          Int?
-  reference       String?      @db.VarChar(100)
-  libelle         String       @db.Text
-  montant         Decimal      @db.Decimal(18, 2)
-  type            TypeEcriture
-  date_operation  DateTime     @db.Date
-  date_valeur     DateTime?    @db.Date
-  lettrage_ref    String?      @db.VarChar(50)
-  lettree         Boolean      @default(false)
-  num_ligne       Int
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  job_id             Int?
+  reference          String?      @db.VarChar(100)
+  libelle            String       @db.Text
+  montant            Decimal      @db.Decimal(18, 2)
+  type               TypeEcriture
+  date_operation     DateTime     @db.Date
+  date_valeur        DateTime?    @db.Date
+  lettrage_ref       String?      @db.VarChar(50)
+  lettree            Boolean      @default(false)
+  num_ligne          Int
+  etat               EtatGeneral  @default(BROUILLON)
+  created_at         DateTime     @default(now())
+  created_by         Int?
+  updated_at         DateTime     @updatedAt
+  updated_by         Int?
 
   compte_bancaire CompteBancaire  @relation(fields: [compte_bancaire_id], references: [id])
   releve_bancaire ReleveBancaire? @relation(fields: [releve_bancaire_id], references: [id])
@@ -543,28 +565,28 @@ model ReleveBancaireLigne {
 // RAPPROCHEMENTS
 // ============================================================
 model Rapprochement {
-  id              Int                   @id @default(autoincrement())
-  entreprise_id   Int
-  compte_bancaire_id Int
-  periode_mois    Int
-  periode_annee   Int
-  statut          StatutRapprochement   @default(BROUILLON)
-  montant_ecart   Decimal               @default(0) @db.Decimal(18, 2)
-  soumis_par      Int?
-  valide_n1_par   Int?
-  valide_n2_par   Int?
-  valide_final_par Int?
+  id                    Int                 @id @default(autoincrement())
+  entreprise_id         Int
+  compte_bancaire_id    Int
+  periode_mois          Int
+  periode_annee         Int
+  statut                StatutRapprochement @default(BROUILLON)
+  montant_ecart         Decimal             @default(0) @db.Decimal(18, 2)
+  soumis_par            Int?
+  valide_n1_par         Int?
+  valide_n2_par         Int?
+  valide_final_par      Int?
   date_validation_final DateTime?
-  motif_rejet     String?               @db.Text
-  pv_url          String?               @db.VarChar(500)
-  etat            EtatGeneral           @default(BROUILLON)
-  created_at      DateTime              @default(now())
-  created_by      Int?
-  updated_at      DateTime              @updatedAt
-  updated_by      Int?
+  motif_rejet           String?             @db.Text
+  pv_url                String?             @db.VarChar(500)
+  etat                  EtatGeneral         @default(BROUILLON)
+  created_at            DateTime            @default(now())
+  created_by            Int?
+  updated_at            DateTime            @updatedAt
+  updated_by            Int?
 
-  entreprise      Entreprise            @relation(fields: [entreprise_id], references: [id])
-  compte_bancaire CompteBancaire        @relation(fields: [compte_bancaire_id], references: [id])
+  entreprise      Entreprise                  @relation(fields: [entreprise_id], references: [id])
+  compte_bancaire CompteBancaire              @relation(fields: [compte_bancaire_id], references: [id])
   justificatifs   JustificatifRapprochement[]
 
   @@unique([entreprise_id, compte_bancaire_id, periode_mois, periode_annee])
@@ -572,20 +594,20 @@ model Rapprochement {
 }
 
 model JustificatifRapprochement {
-  id              Int          @id @default(autoincrement())
+  id               Int         @id @default(autoincrement())
   rapprochement_id Int
-  nom_fichier     String       @db.VarChar(255)
-  url_fichier     String       @db.VarChar(500)
-  type_fichier    TypeFichier
-  taille_octets   Int?
-  description     String?      @db.Text
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  nom_fichier      String      @db.VarChar(255)
+  url_fichier      String      @db.VarChar(500)
+  type_fichier     TypeFichier
+  taille_octets    Int?
+  description      String?     @db.Text
+  etat             EtatGeneral @default(ACTIF)
+  created_at       DateTime    @default(now())
+  created_by       Int?
+  updated_at       DateTime    @updatedAt
+  updated_by       Int?
 
-  rapprochement   Rapprochement @relation(fields: [rapprochement_id], references: [id])
+  rapprochement Rapprochement @relation(fields: [rapprochement_id], references: [id])
 
   @@map("justificatifs_rapprochement")
 }
@@ -594,22 +616,22 @@ model JustificatifRapprochement {
 // FICHIERS SOURCES
 // ============================================================
 model FichierSource {
-  id              Int          @id @default(autoincrement())
-  job_id          Int?
-  tenant_id       Int
-  nom_original    String       @db.VarChar(255)
-  nom_stockage    String       @db.VarChar(255)
-  url             String       @db.VarChar(500)
-  type_fichier    TypeFichier
-  taille_octets   Int?
-  nb_lignes       Int?
-  etat            EtatGeneral  @default(BROUILLON)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id            Int         @id @default(autoincrement())
+  job_id        Int?
+  tenant_id     Int
+  nom_original  String      @db.VarChar(255)
+  nom_stockage  String      @db.VarChar(255)
+  url           String      @db.VarChar(500)
+  type_fichier  TypeFichier
+  taille_octets Int?
+  nb_lignes     Int?
+  etat          EtatGeneral @default(BROUILLON)
+  created_at    DateTime    @default(now())
+  created_by    Int?
+  updated_at    DateTime    @updatedAt
+  updated_by    Int?
 
-  job             JobTraitement? @relation(fields: [job_id], references: [id])
+  job JobTraitement? @relation(fields: [job_id], references: [id])
 
   @@map("fichiers_sources")
 }
@@ -623,15 +645,15 @@ model FichierSource {
 // à chaque nouveau paramètre. Portée globale à l'instance (pas par tenant) :
 // ce sont des réglages d'infrastructure (ex. SMTP), pas des données métier.
 model ParametreApplication {
-  id              Int          @id @default(autoincrement())
-  categorie       String       @db.VarChar(50)
-  cle             String       @db.VarChar(100)
-  valeur          String?      @db.Text
-  etat            EtatGeneral  @default(ACTIF)
-  created_at      DateTime     @default(now())
-  created_by      Int?
-  updated_at      DateTime     @updatedAt
-  updated_by      Int?
+  id         Int         @id @default(autoincrement())
+  categorie  String      @db.VarChar(50)
+  cle        String      @db.VarChar(100)
+  valeur     String?     @db.Text
+  etat       EtatGeneral @default(ACTIF)
+  created_at DateTime    @default(now())
+  created_by Int?
+  updated_at DateTime    @updatedAt
+  updated_by Int?
 
   @@unique([categorie, cle])
   @@map("parametres_application")

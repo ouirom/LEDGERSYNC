@@ -6,6 +6,7 @@ import { authenticate, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { getIO } from '../../sockets/socketServer';
 import { errorMessage } from '../../utils/errors';
+import { resolveOrgScope, orgScopeWhere } from '../../utils/orgScope';
 
 const router = Router();
 router.use(authenticate);
@@ -44,6 +45,12 @@ router.get('/workspace', async (req: AuthRequest, res: Response): Promise<void> 
   const a = parseInt(annee as string);
 
   try {
+    const scope = await resolveOrgScope(req.user!);
+    const compteAutorise = await prisma.compteBancaire.findFirst({
+      where: { id: compteId, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+    });
+    if (!compteAutorise) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
+
     const [ecritures, releves, rapprochement] = await Promise.all([
       prisma.ecritureComptable.findMany({
         where: {

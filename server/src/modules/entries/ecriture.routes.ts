@@ -9,6 +9,7 @@ import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { parseSourceFile, toPreviewLigne, parseMontantColumns, getLibelle, getCol, toDate } from '../../utils/statementParser';
+import { resolveOrgScope, orgScopeWhere } from '../../utils/orgScope';
 
 const router = Router();
 router.use(authenticate);
@@ -37,9 +38,11 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const { compte_bancaire_id, mois, annee, lettree, page = '1' } = req.query;
   const skip = (parseInt(page as string) - 1) * 100;
   try {
+    const scope = await resolveOrgScope(req.user!);
     const where: Prisma.EcritureComptableWhereInput = {
       entreprise: { tenant_id: req.user!.tenantId },
       etat: { not: 'ANNULE' },
+      ...orgScopeWhere(scope),
     };
     if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
     if (mois) where.periode_mois = parseInt(mois as string);
@@ -59,6 +62,20 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = ecritureSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
 
+  const scope = await resolveOrgScope(req.user!);
+  if (!scope.unrestricted && scope.entrepriseId && parsed.data.entreprise_id !== scope.entrepriseId) {
+    res.status(403).json({ success: false, message: 'Entreprise hors de votre périmètre' }); return;
+  }
+
+  let succursale_id: number | null = scope.succursaleId ?? null;
+  if (parsed.data.compte_bancaire_id) {
+    const compte = await prisma.compteBancaire.findFirst({
+      where: { id: parsed.data.compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+    });
+    if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
+    succursale_id = compte.succursale_id;
+  }
+
   if (await isPeriodeLocked(parsed.data.entreprise_id, parsed.data.periode_mois, parsed.data.periode_annee)) {
     res.status(423).json({ success: false, message: 'Période verrouillée', code: 'PERIOD_LOCKED' }); return;
   }
@@ -67,6 +84,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const data = await prisma.ecritureComptable.create({
       data: {
         ...parsed.data,
+        succursale_id,
         date_ecriture: new Date(parsed.data.date_ecriture),
         date_valeur: parsed.data.date_valeur ? new Date(parsed.data.date_valeur) : null,
         etat: 'BROUILLON',
@@ -145,9 +163,13 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
   if (!parsedBody.success) { res.status(400).json({ success: false, errors: parsedBody.error.flatten() }); return; }
   const { compte_bancaire_id } = parsedBody.data;
 
-  const compte = await prisma.compteBancaire.findFirst({ where: { id: compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId } } });
-  if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé' }); return; }
+  const scope = await resolveOrgScope(req.user!);
+  const compte = await prisma.compteBancaire.findFirst({
+    where: { id: compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+  });
+  if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
   const entreprise_id = compte.entreprise_id;
+  const succursale_id = compte.succursale_id;
 
   try {
     const rowsPerFile = await Promise.all(files.map(f => parseSourceFile(f.path)));
@@ -177,6 +199,7 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
       await prisma.ecritureComptable.create({
         data: {
           entreprise_id,
+          succursale_id,
           compte_bancaire_id,
           reference,
           libelle: getLibelle(row),
@@ -218,8 +241,9 @@ router.post('/:id/extourne', async (req: AuthRequest, res: Response): Promise<vo
 
   const id = parseInt(req.params['id'] as string);
   try {
+    const scope = await resolveOrgScope(req.user!);
     const ecriture = await prisma.ecritureComptable.findFirst({
-      where: { id, entreprise: { tenant_id: req.user!.tenantId } },
+      where: { id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
     });
     if (!ecriture) { res.status(404).json({ success: false, message: 'Écriture non trouvée' }); return; }
     if (ecriture.etat === 'ANNULE') { res.status(400).json({ success: false, message: 'Écriture déjà annulée' }); return; }
@@ -233,6 +257,7 @@ router.post('/:id/extourne', async (req: AuthRequest, res: Response): Promise<vo
       return tx.ecritureComptable.create({
         data: {
           entreprise_id: ecriture.entreprise_id,
+          succursale_id: ecriture.succursale_id,
           compte_bancaire_id: ecriture.compte_bancaire_id,
           reference: `EXT-${ecriture.reference}`,
           libelle: `EXTOURNE: ${ecriture.libelle}`,

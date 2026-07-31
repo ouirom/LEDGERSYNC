@@ -52,7 +52,7 @@ router.post('/login', async (req, res): Promise<void> => {
   try {
     const user = await prisma.utilisateur.findFirst({
       where: { email, etat: 'ACTIF' },
-      include: { tenant: true, entreprise: true },
+      include: { tenant: true, entreprise: true, succursale: true, direction: true, service: true },
     });
 
     const ipAddress = req.ip || req.socket.remoteAddress;
@@ -107,6 +107,9 @@ router.post('/login', async (req, res): Promise<void> => {
       userId: user.id,
       tenantId: user.tenant_id,
       entrepriseId: user.entreprise_id ?? undefined,
+      succursaleId: user.succursale_id ?? undefined,
+      directionId: user.direction_id ?? undefined,
+      serviceId: user.service_id ?? undefined,
       role: user.role,
       email: user.email,
     };
@@ -148,6 +151,12 @@ router.post('/login', async (req, res): Promise<void> => {
         tenantCode: user.tenant?.code,
         entrepriseId: user.entreprise_id,
         entrepriseNom: user.entreprise?.nom,
+        succursaleId: user.succursale_id,
+        succursaleNom: user.succursale?.nom,
+        directionId: user.direction_id,
+        directionNom: user.direction?.nom,
+        serviceId: user.service_id,
+        serviceNom: user.service?.nom,
         mustChangePassword: user.must_change_password,
       },
     });
@@ -180,6 +189,9 @@ router.post('/refresh', async (req, res): Promise<void> => {
       userId: user.id,
       tenantId: user.tenant_id,
       entrepriseId: user.entreprise_id ?? undefined,
+      succursaleId: user.succursale_id ?? undefined,
+      directionId: user.direction_id ?? undefined,
+      serviceId: user.service_id ?? undefined,
       role: user.role,
       email: user.email,
     };

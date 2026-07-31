@@ -19,6 +19,8 @@ const ROLE_LABELS: Record<RoleUtilisateur, string> = {
 // (séparation des fonctions, miroir de la règle appliquée côté serveur)
 const ROLES_RESERVED_TO_SUPER_ADMIN: RoleUtilisateur[] = ['SUPER_ADMIN', 'ADMIN_TENANT'];
 
+type NiveauRattachement = '' | 'entreprise' | 'succursale' | 'direction' | 'service';
+
 interface UserModalState {
   mode: 'add' | 'edit';
   targetId?: number;
@@ -27,8 +29,8 @@ interface UserModalState {
   email: string;
   password: string;
   role: RoleUtilisateur;
-  entreprise_id: string;
-  service_id: string;
+  niveau: NiveauRattachement;
+  rattachement_id: string;
   etat: string;
 }
 
@@ -173,7 +175,14 @@ function TreeNode({ node, depth = 0, onAddChild, onEdit, onDelete }: {
 }
 
 const EMPTY_USER_FORM: Omit<UserModalState, 'mode' | 'targetId'> = {
-  nom: '', prenom: '', email: '', password: '', role: 'USER', entreprise_id: '', service_id: '', etat: 'ACTIF',
+  nom: '', prenom: '', email: '', password: '', role: 'USER', niveau: '', rattachement_id: '', etat: 'ACTIF',
+};
+
+const NIVEAU_LABELS: Record<Exclude<NiveauRattachement, ''>, string> = {
+  entreprise: 'Entreprise',
+  succursale: 'Succursale',
+  direction: 'Direction',
+  service: 'Service',
 };
 
 export default function HierarchyPage() {
@@ -332,6 +341,30 @@ export default function HierarchyPage() {
 
   const assignableRoles = ROLES_UTILISATEUR.filter(r => hasRole('SUPER_ADMIN') || !ROLES_RESERVED_TO_SUPER_ADMIN.includes(r));
 
+  // Libellé du rattachement effectif d'un utilisateur, quel que soit son niveau
+  // (le plus profond renseigné l'emporte — un seul est jamais non-nul en pratique).
+  const rattachementLabel = (u: Utilisateur): string => {
+    if (u.service) return `${u.service.nom} (Service)`;
+    if (u.direction) return `${u.direction.nom} (Direction)`;
+    if (u.succursale) return `${u.succursale.nom} (Succursale)`;
+    if (u.entreprise) return u.entreprise.nom;
+    return '—';
+  };
+
+  // Options disponibles pour le niveau de rattachement choisi dans le formulaire
+  // utilisateur — chaque niveau a sa propre liste, avec repère hiérarchique dans
+  // le libellé pour les niveaux imbriqués (succursaleOptions/directionOptions
+  // sont déjà calculés plus haut pour le formulaire d'ajout d'entité).
+  const rattachementOptions = (niveau: NiveauRattachement): Array<{ id: number; label: string }> => {
+    switch (niveau) {
+      case 'entreprise': return entreprises.map(e => ({ id: e.id, label: e.nom }));
+      case 'succursale': return succursaleOptions;
+      case 'direction': return directionOptions;
+      case 'service': return serviceOptions.map(s => ({ id: s.id, label: s.label }));
+      default: return [];
+    }
+  };
+
   const openAddUser = () => {
     setUserError(null);
     setUserModal({ mode: 'add', ...EMPTY_USER_FORM });
@@ -339,10 +372,15 @@ export default function HierarchyPage() {
 
   const openEditUser = (u: Utilisateur) => {
     setUserError(null);
+    let niveau: NiveauRattachement = '';
+    let rattachement_id = '';
+    if (u.succursale_id) { niveau = 'succursale'; rattachement_id = String(u.succursale_id); }
+    else if (u.direction_id) { niveau = 'direction'; rattachement_id = String(u.direction_id); }
+    else if (u.service_id) { niveau = 'service'; rattachement_id = String(u.service_id); }
+    else if (u.entreprise_id) { niveau = 'entreprise'; rattachement_id = String(u.entreprise_id); }
     setUserModal({
       mode: 'edit', targetId: u.id, nom: u.nom, prenom: u.prenom, email: u.email, password: '',
-      role: u.role as RoleUtilisateur, entreprise_id: u.entreprise_id ? String(u.entreprise_id) : '',
-      service_id: u.service_id ? String(u.service_id) : '', etat: u.etat,
+      role: u.role as RoleUtilisateur, niveau, rattachement_id, etat: u.etat,
     });
   };
 
@@ -359,13 +397,16 @@ export default function HierarchyPage() {
     setUserSaving(true);
     setUserError(null);
     try {
+      const rid = userModal.rattachement_id ? parseInt(userModal.rattachement_id) : null;
       const payload = {
         nom: userModal.nom.trim(),
         prenom: userModal.prenom.trim(),
         email: userModal.email.trim(),
         role: userModal.role,
-        entreprise_id: userModal.entreprise_id ? parseInt(userModal.entreprise_id) : null,
-        service_id: userModal.service_id ? parseInt(userModal.service_id) : null,
+        entreprise_id: userModal.niveau === 'entreprise' ? rid : null,
+        succursale_id: userModal.niveau === 'succursale' ? rid : null,
+        direction_id: userModal.niveau === 'direction' ? rid : null,
+        service_id: userModal.niveau === 'service' ? rid : null,
       };
       if (userModal.mode === 'add') {
         await api.post('/users', { ...payload, password: userModal.password });
@@ -489,7 +530,7 @@ export default function HierarchyPage() {
                 <th>Utilisateur</th>
                 <th>Email</th>
                 <th>Rôle</th>
-                <th>Entreprise</th>
+                <th>Rattachement</th>
                 <th>Statut</th>
                 <th>Dernière connexion</th>
                 <th>Actions</th>
@@ -526,7 +567,7 @@ export default function HierarchyPage() {
                       {ROLE_ICONS[u.role]} {u.role?.replace('_', ' ')}
                     </span>
                   </td>
-                  <td style={{ fontSize: 12 }}>{u.entreprise?.nom || '—'}</td>
+                  <td style={{ fontSize: 12 }}>{rattachementLabel(u)}</td>
                   <td><span className={`badge ${u.etat === 'ACTIF' ? 'badge-success' : 'badge-gray'}`}>{u.etat}</span></td>
                   <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                     {u.derniere_connexion ? new Date(u.derniere_connexion).toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
@@ -693,37 +734,32 @@ export default function HierarchyPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Entreprise</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Niveau de rattachement</label>
                 <select
                   className="select"
-                  value={userModal.entreprise_id}
-                  onChange={e => {
-                    const entrepriseId = e.target.value;
-                    setUserModal(m => {
-                      if (!m) return m;
-                      const stillValid = m.service_id && serviceOptions.find(s => String(s.id) === m.service_id)?.entrepriseId === parseInt(entrepriseId);
-                      return { ...m, entreprise_id: entrepriseId, service_id: stillValid ? m.service_id : '' };
-                    });
-                  }}
+                  value={userModal.niveau}
+                  onChange={e => setUserModal(m => m && { ...m, niveau: e.target.value as NiveauRattachement, rattachement_id: '' })}
                   style={{ width: '100%' }}
                 >
                   <option value="">— Non assigné —</option>
-                  {entreprises.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
+                  {(Object.keys(NIVEAU_LABELS) as Array<Exclude<NiveauRattachement, ''>>).map(n => (
+                    <option key={n} value={n}>{NIVEAU_LABELS[n]}</option>
+                  ))}
                 </select>
               </div>
               <div>
-                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Service</label>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  {userModal.niveau ? NIVEAU_LABELS[userModal.niveau] : 'Entité'}
+                </label>
                 <select
                   className="select"
-                  value={userModal.service_id}
-                  onChange={e => setUserModal(m => m && { ...m, service_id: e.target.value })}
+                  value={userModal.rattachement_id}
+                  onChange={e => setUserModal(m => m && { ...m, rattachement_id: e.target.value })}
                   style={{ width: '100%' }}
-                  disabled={!userModal.entreprise_id}
+                  disabled={!userModal.niveau}
                 >
-                  <option value="">— Non assigné —</option>
-                  {serviceOptions.filter(s => String(s.entrepriseId) === userModal.entreprise_id).map(s => (
-                    <option key={s.id} value={s.id}>{s.label}</option>
-                  ))}
+                  <option value="">— Choisir —</option>
+                  {rattachementOptions(userModal.niveau).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </div>
             </div>

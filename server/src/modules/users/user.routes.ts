@@ -22,9 +22,11 @@ function canAssignRole(actorRole: string, targetRole: RoleUtilisateur): boolean 
 
 const userSelect = {
   id: true, email: true, nom: true, prenom: true, role: true, etat: true, derniere_connexion: true,
-  entreprise_id: true, service_id: true,
+  entreprise_id: true, succursale_id: true, direction_id: true, service_id: true,
   entreprise: { select: { id: true, nom: true, code: true } },
-  service: { select: { id: true, nom: true, direction: { select: { id: true, nom: true, succursale: { select: { id: true, nom: true } } } } } },
+  succursale: { select: { id: true, nom: true, entreprise: { select: { id: true, nom: true } } } },
+  direction: { select: { id: true, nom: true, succursale: { select: { id: true, nom: true, entreprise: { select: { id: true, nom: true } } } } } },
+  service: { select: { id: true, nom: true, direction: { select: { id: true, nom: true, succursale: { select: { id: true, nom: true, entreprise: { select: { id: true, nom: true } } } } } } } },
 } as const;
 
 const baseSchema = z.object({
@@ -33,6 +35,8 @@ const baseSchema = z.object({
   email: z.string().email(),
   role: z.enum(ROLES),
   entreprise_id: z.number().int().positive().nullable().optional(),
+  succursale_id: z.number().int().positive().nullable().optional(),
+  direction_id: z.number().int().positive().nullable().optional(),
   service_id: z.number().int().positive().nullable().optional(),
 });
 
@@ -40,27 +44,37 @@ const createSchema = baseSchema.extend({ password: z.string().min(6).max(100) })
 const updateSchema = baseSchema.extend({ etat: z.enum(['ACTIF', 'INACTIF', 'SUSPENDU']).optional() });
 const passwordSchema = z.object({ password: z.string().min(6).max(100) });
 
-// Vérifie que l'entreprise (et, le cas échéant, le service — via sa chaîne
-// service -> direction -> succursale -> entreprise) appartiennent bien au tenant
-// courant, et que le service appartient bien à l'entreprise choisie.
+// Un utilisateur est rattaché à un seul niveau de la hiérarchie organisationnelle
+// (entreprise, succursale, direction ou service) — c'est ce niveau qui détermine
+// le périmètre des données (banques, comptes, écritures) qu'il peut consulter,
+// voir server/src/utils/orgScope.ts. Vérifie que le niveau choisi appartient
+// bien au tenant courant.
 async function validateAffectation(
   tenantId: number,
   entrepriseId: number | null | undefined,
+  succursaleId: number | null | undefined,
+  directionId: number | null | undefined,
   serviceId: number | null | undefined
 ): Promise<string | null> {
+  const niveaux = [entrepriseId, succursaleId, directionId, serviceId].filter(v => v != null);
+  if (niveaux.length > 1) {
+    return 'Un seul niveau de rattachement (entreprise, succursale, direction ou service) peut être choisi';
+  }
   if (entrepriseId) {
     const entreprise = await prisma.entreprise.findFirst({ where: { id: entrepriseId, tenant_id: tenantId } });
     if (!entreprise) return 'Entreprise non trouvée';
   }
+  if (succursaleId) {
+    const succursale = await prisma.succursale.findFirst({ where: { id: succursaleId, entreprise: { tenant_id: tenantId } } });
+    if (!succursale) return 'Succursale non trouvée';
+  }
+  if (directionId) {
+    const direction = await prisma.direction.findFirst({ where: { id: directionId, succursale: { entreprise: { tenant_id: tenantId } } } });
+    if (!direction) return 'Direction non trouvée';
+  }
   if (serviceId) {
-    const service = await prisma.service.findFirst({
-      where: { id: serviceId, direction: { succursale: { entreprise: { tenant_id: tenantId } } } },
-      include: { direction: { include: { succursale: true } } },
-    });
+    const service = await prisma.service.findFirst({ where: { id: serviceId, direction: { succursale: { entreprise: { tenant_id: tenantId } } } } });
     if (!service) return 'Service non trouvé';
-    if (entrepriseId && service.direction.succursale.entreprise_id !== entrepriseId) {
-      return 'Le service sélectionné n\'appartient pas à l\'entreprise choisie';
-    }
   }
   return null;
 }
@@ -83,12 +97,12 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
-  const { nom, prenom, email, role, entreprise_id, service_id, password } = parsed.data;
+  const { nom, prenom, email, role, entreprise_id, succursale_id, direction_id, service_id, password } = parsed.data;
 
   if (!canAssignRole(req.user!.role, role)) {
     res.status(403).json({ success: false, message: 'Rôle insuffisant pour attribuer ce niveau d\'accès' }); return;
   }
-  const affectationError = await validateAffectation(req.user!.tenantId, entreprise_id, service_id);
+  const affectationError = await validateAffectation(req.user!.tenantId, entreprise_id, succursale_id, direction_id, service_id);
   if (affectationError) { res.status(404).json({ success: false, message: affectationError }); return; }
 
   try {
@@ -96,7 +110,7 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     const data = await prisma.utilisateur.create({
       data: {
         tenant_id: req.user!.tenantId, nom, prenom, email, role, password_hash,
-        entreprise_id: entreprise_id ?? null, service_id: service_id ?? null,
+        entreprise_id: entreprise_id ?? null, succursale_id: succursale_id ?? null, direction_id: direction_id ?? null, service_id: service_id ?? null,
         etat: 'ACTIF', must_change_password: true, created_by: req.user!.userId, updated_by: req.user!.userId,
       },
       select: userSelect,
@@ -117,7 +131,7 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const parsed = updateSchema.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
   const id = parseInt(req.params['id'] as string);
-  const { nom, prenom, email, role, entreprise_id, service_id, etat } = parsed.data;
+  const { nom, prenom, email, role, entreprise_id, succursale_id, direction_id, service_id, etat } = parsed.data;
 
   const existing = await prisma.utilisateur.findFirst({ where: { id, tenant_id: req.user!.tenantId } });
   if (!existing) { res.status(404).json({ success: false, message: 'Utilisateur non trouvé' }); return; }
@@ -127,7 +141,7 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   if (id === req.user!.userId && etat && etat !== 'ACTIF') {
     res.status(400).json({ success: false, message: 'Vous ne pouvez pas suspendre votre propre compte' }); return;
   }
-  const affectationError = await validateAffectation(req.user!.tenantId, entreprise_id, service_id);
+  const affectationError = await validateAffectation(req.user!.tenantId, entreprise_id, succursale_id, direction_id, service_id);
   if (affectationError) { res.status(404).json({ success: false, message: affectationError }); return; }
 
   try {
@@ -135,7 +149,7 @@ router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
       where: { id },
       data: {
         nom, prenom, email, role,
-        entreprise_id: entreprise_id ?? null, service_id: service_id ?? null,
+        entreprise_id: entreprise_id ?? null, succursale_id: succursale_id ?? null, direction_id: direction_id ?? null, service_id: service_id ?? null,
         ...(etat ? { etat } : {}),
         updated_by: req.user!.userId,
       },

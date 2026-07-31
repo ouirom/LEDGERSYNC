@@ -8,6 +8,7 @@ import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
 import { importQueue } from '../../workers/importWorker';
 import { parseSourceFile, toPreviewLigne } from '../../utils/statementParser';
+import { resolveOrgScope, orgScopeWhere } from '../../utils/orgScope';
 
 const router = Router();
 router.use(authenticate);
@@ -87,8 +88,9 @@ router.post('/import', upload.array('files', 20), async (req: AuthRequest, res: 
   const { compte_bancaire_id, template_id, reference, date_debut, date_fin } = req.body as Record<string, string | undefined>;
   if (!compte_bancaire_id) { res.status(400).json({ success: false, message: 'compte_bancaire_id requis' }); return; }
 
+  const scope = await resolveOrgScope(req.user!);
   const compte = await prisma.compteBancaire.findFirst({
-    where: { id: parseInt(compte_bancaire_id), entreprise: { tenant_id: req.user!.tenantId } },
+    where: { id: parseInt(compte_bancaire_id), entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
   });
   if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé' }); return; }
 
@@ -175,7 +177,8 @@ router.get('/statements', async (req: AuthRequest, res: Response): Promise<void>
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
-    const where: Prisma.ReleveBancaireWhereInput = { compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } } };
+    const scope = await resolveOrgScope(req.user!);
+    const where: Prisma.ReleveBancaireWhereInput = { compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) } };
     if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
 
     const [data, total] = await Promise.all([
@@ -200,8 +203,9 @@ router.get('/statements', async (req: AuthRequest, res: Response): Promise<void>
 router.get('/statements/:id', async (req: AuthRequest, res: Response): Promise<void> => {
   const id = parseInt(req.params['id'] as string);
   try {
+    const scope = await resolveOrgScope(req.user!);
     const releve = await prisma.releveBancaire.findFirst({
-      where: { id, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } } },
+      where: { id, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) } },
       include: {
         compte_bancaire: { select: { id: true, intitule: true, banque: { select: { nom: true } } } },
         lignes: { orderBy: { num_ligne: 'asc' } },
@@ -218,8 +222,9 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   const skip = (parseInt(page as string) - 1) * parseInt(limit as string);
 
   try {
+    const scope = await resolveOrgScope(req.user!);
     const where: Prisma.ReleveBancaireLigneWhereInput = {
-      compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId } },
+      compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
       etat: { not: 'ANNULE' },
     };
     if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);

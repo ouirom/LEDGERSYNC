@@ -5,6 +5,9 @@ export interface JwtPayload {
   userId: number;
   tenantId: number;
   entrepriseId?: number;
+  succursaleId?: number;
+  directionId?: number;
+  serviceId?: number;
   role: string;
   email: string;
 }

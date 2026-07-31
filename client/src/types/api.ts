@@ -66,9 +66,13 @@ export interface Utilisateur {
   etat: string;
   derniere_connexion?: string | null;
   entreprise_id?: number | null;
+  succursale_id?: number | null;
+  direction_id?: number | null;
   service_id?: number | null;
   entreprise?: { id: number; nom: string; code?: string } | null;
-  service?: { id: number; nom: string; direction?: { id: number; nom: string; succursale?: { id: number; nom: string } } } | null;
+  succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } | null;
+  direction?: { id: number; nom: string; succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } } | null;
+  service?: { id: number; nom: string; direction?: { id: number; nom: string; succursale?: { id: number; nom: string; entreprise?: { id: number; nom: string } } } } | null;
 }
 
 export const ROLES_UTILISATEUR = ['SUPER_ADMIN', 'ADMIN_TENANT', 'DAF', 'MANAGER', 'SUPERVISEUR', 'USER', 'AUDITEUR'] as const;

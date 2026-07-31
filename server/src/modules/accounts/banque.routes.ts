@@ -1,27 +1,42 @@
 import { Router, Response } from 'express';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
+import { resolveOrgScope, banqueScopeWhere } from '../../utils/orgScope';
 
 const router = Router();
 router.use(authenticate);
 
-// GET /api/banques — Liste des banques du tenant
+// GET /api/banques — Liste des banques visibles dans le périmètre de l'utilisateur
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   try {
+    const scope = await resolveOrgScope(req.user!);
     const data = await prisma.banque.findMany({
-      where: { tenant_id: req.user!.tenantId, etat: 'ACTIF' },
+      where: { tenant_id: req.user!.tenantId, etat: 'ACTIF', ...banqueScopeWhere(scope) },
       include: { templates: true },
     });
     res.json({ success: true, data });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 
-// POST /api/banques — Créer une banque
+// POST /api/banques — Créer une banque, rattachée au périmètre de l'utilisateur
+// (entreprise/succursale explicite en body si son rôle n'est pas restreint,
+// sinon héritée automatiquement de son propre rattachement).
 router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { code_swift, nom, pays_code } = req.body as Record<string, string>;
+  const { code_swift, nom, pays_code, entreprise_id, succursale_id } = req.body as Record<string, unknown>;
   try {
+    const scope = await resolveOrgScope(req.user!);
+    const rattachement = scope.unrestricted
+      ? { entreprise_id: entreprise_id ? Number(entreprise_id) : null, succursale_id: succursale_id ? Number(succursale_id) : null }
+      : { entreprise_id: scope.entrepriseId, succursale_id: scope.succursaleId };
+
     const data = await prisma.banque.create({
-      data: { tenant_id: req.user!.tenantId, code_swift, nom, pays_code, etat: 'ACTIF', created_by: req.user!.userId, updated_by: req.user!.userId },
+      data: {
+        tenant_id: req.user!.tenantId,
+        entreprise_id: rattachement.entreprise_id,
+        succursale_id: rattachement.succursale_id,
+        code_swift: code_swift as string, nom: nom as string, pays_code: pays_code as string,
+        etat: 'ACTIF', created_by: req.user!.userId, updated_by: req.user!.userId,
+      },
     });
     res.status(201).json({ success: true, data });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
