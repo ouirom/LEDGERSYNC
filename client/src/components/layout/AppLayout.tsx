@@ -4,7 +4,7 @@ import {
   LayoutDashboard, GitMerge, Upload, Briefcase, Settings,
   Shield, ChevronLeft, ChevronRight, Bell, Moon, Sun,
   User, LogOut, Wifi, WifiOff, FileText, FilePen,
-  HelpCircle, Palette, Building2, Search, X, Command, Settings2
+  HelpCircle, Palette, Building2, Search, X, Command, Settings2, FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -25,6 +25,7 @@ const NAV_GROUPS = [
     items: [
       { to: '/reconciliation/workspace', icon: GitMerge, label: 'Espace de travail' },
       { to: '/reconciliation/excel-import', icon: Upload, label: 'Import Excel' },
+      { to: '/reconciliation/ecritures-import', icon: FileSpreadsheet, label: 'Import Écritures' },
       { to: '/reconciliation/pdf-wizard', icon: FilePen, label: 'PV & Validation' },
     ],
   },
@@ -59,6 +60,7 @@ const SEARCH_INDEX = [
   { label: 'Piste d\'Audit (Dashboard)', to: '/dashboard/audit', section: 'Dashboard' },
   { label: 'Espace de Rapprochement', to: '/reconciliation/workspace', section: 'Rapprochement' },
   { label: 'Import Excel / CSV', to: '/reconciliation/excel-import', section: 'Rapprochement' },
+  { label: 'Import Écritures Comptables', to: '/reconciliation/ecritures-import', section: 'Rapprochement' },
   { label: 'Assistant PV & Validation', to: '/reconciliation/pdf-wizard', section: 'Rapprochement' },
   { label: 'Moniteur de Jobs', to: '/jobs/monitor', section: 'Opérations' },
   { label: 'Périodes Comptables', to: '/settings/periods', section: 'Paramètres' },

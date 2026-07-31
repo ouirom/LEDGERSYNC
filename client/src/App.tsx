@@ -11,6 +11,7 @@ import OperationalDashboard from './pages/dashboard/OperationalDashboard';
 import ExecutiveDashboard from './pages/dashboard/ExecutiveDashboard';
 import ReconciliationWorkspace from './pages/reconciliation/ReconciliationWorkspace';
 import ExcelImportPage from './pages/reconciliation/ExcelImportPage';
+import EcritureImportPage from './pages/reconciliation/EcritureImportPage';
 import PdfWizardPage from './pages/reconciliation/PdfWizardPage';
 import JobMonitorPage from './pages/jobs/JobMonitorPage';
 import PeriodsSettingsPage from './pages/settings/PeriodsSettingsPage';
@@ -63,6 +64,7 @@ function App() {
               {/* Rapprochement */}
               <Route path="reconciliation/workspace" element={<ReconciliationWorkspace />} />
               <Route path="reconciliation/excel-import" element={<ExcelImportPage />} />
+              <Route path="reconciliation/ecritures-import" element={<EcritureImportPage />} />
               <Route path="reconciliation/pdf-wizard" element={<PdfWizardPage />} />
               {/* Jobs */}
               <Route path="jobs/monitor" element={<JobMonitorPage />} />

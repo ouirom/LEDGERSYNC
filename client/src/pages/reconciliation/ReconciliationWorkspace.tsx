@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
-import { Check, X, Zap, AlertCircle, RefreshCw, Columns, Undo2, FileCheck2, Scale, Rows3, Columns3 } from 'lucide-react';
+import { Check, X, Zap, AlertCircle, RefreshCw, Columns, Undo2, FileCheck2, Scale, Rows3, Columns3, Plus, Save, Upload } from 'lucide-react';
 import api from '../../api/axios';
 import { Link } from 'react-router-dom';
 import { apiErrorMessage } from '../../utils/errors';
@@ -18,6 +18,17 @@ const STATUT_LABELS: Record<string, string> = {
 };
 
 const fmt = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2 });
+
+interface EcritureFormState {
+  reference: string;
+  libelle: string;
+  montant: string;
+  type: 'DEBIT' | 'CREDIT';
+  date_ecriture: string;
+  date_valeur: string;
+  piece_ref: string;
+}
+const EMPTY_ECRITURE_FORM: EcritureFormState = { reference: '', libelle: '', montant: '', type: 'DEBIT', date_ecriture: '', date_valeur: '', piece_ref: '' };
 
 export default function ReconciliationWorkspace() {
   const [comptes, setComptes] = useState<Compte[]>([]);
@@ -39,6 +50,9 @@ export default function ReconciliationWorkspace() {
   const [imputations, setImputations] = useState<ImputationCategorie[]>([]);
   const [ecartModal, setEcartModal] = useState<{ categorieId: string; motif: string } | null>(null);
   const [applyingEcart, setApplyingEcart] = useState(false);
+  const [ecritureModal, setEcritureModal] = useState<EcritureFormState | null>(null);
+  const [savingEcriture, setSavingEcriture] = useState(false);
+  const [ecritureError, setEcritureError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const isDragging = useRef(false);
 
@@ -176,6 +190,52 @@ export default function ReconciliationWorkspace() {
       setMsg({ type: 'success', text: `${data.data.suggestions.length} correspondances trouvées` });
     } catch { setMsg({ type: 'error', text: 'Erreur lors du matching automatique' }); }
     setTimeout(() => setMsg(null), 4000);
+  };
+
+  const openEcritureModal = () => {
+    setEcritureError(null);
+    const today = new Date();
+    const defaultDate = parseInt(annee) === today.getFullYear() && parseInt(mois) === today.getMonth() + 1
+      ? today.toISOString().slice(0, 10)
+      : `${annee}-${String(mois).padStart(2, '0')}-01`;
+    setEcritureModal({ ...EMPTY_ECRITURE_FORM, date_ecriture: defaultDate });
+  };
+
+  const submitEcriture = async () => {
+    if (!ecritureModal) return;
+    const compte = comptes.find(c => String(c.id) === selectedCompte);
+    if (!compte) return;
+    if (!ecritureModal.reference.trim() || !ecritureModal.libelle.trim() || !ecritureModal.montant || !ecritureModal.date_ecriture) {
+      setEcritureError('Référence, libellé, montant et date sont obligatoires'); return;
+    }
+    const montant = parseFloat(ecritureModal.montant);
+    if (isNaN(montant) || montant <= 0) { setEcritureError('Montant invalide'); return; }
+
+    setSavingEcriture(true);
+    setEcritureError(null);
+    try {
+      await api.post('/ecritures', {
+        entreprise_id: compte.entreprise_id,
+        compte_bancaire_id: parseInt(selectedCompte),
+        reference: ecritureModal.reference.trim(),
+        libelle: ecritureModal.libelle.trim(),
+        montant,
+        type: ecritureModal.type,
+        date_ecriture: ecritureModal.date_ecriture,
+        date_valeur: ecritureModal.date_valeur || undefined,
+        piece_ref: ecritureModal.piece_ref.trim() || undefined,
+        periode_mois: parseInt(mois),
+        periode_annee: parseInt(annee),
+      });
+      setEcritureModal(null);
+      setMsg({ type: 'success', text: 'Écriture ajoutée avec succès' });
+      loadWorkspace();
+    } catch (err) {
+      setEcritureError(apiErrorMessage(err, 'Erreur lors de la création de l\'écriture'));
+    } finally {
+      setSavingEcriture(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
   };
 
   // Resizable divider (horizontal: colonnes côte à côte / vertical: empilées)
@@ -322,6 +382,68 @@ export default function ReconciliationWorkspace() {
         </div>
       )}
 
+      {/* Modal ajout d'écriture */}
+      {ecritureModal && (
+        <div className="modal-overlay" onClick={() => setEcritureModal(null)}>
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 460 }}>
+            <h3 style={{ margin: '0 0 4px', fontSize: 17, fontWeight: 700 }}>Ajouter une écriture</h3>
+            <p style={{ margin: '0 0 16px', fontSize: 12, color: 'var(--text-muted)' }}>
+              Compte : {comptes.find(c => String(c.id) === selectedCompte)?.intitule} · Période : {String(mois).padStart(2, '0')}/{annee}
+            </p>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Référence</label>
+                <input className="input" style={{ width: '100%' }} value={ecritureModal.reference} onChange={e => setEcritureModal(m => m && { ...m, reference: e.target.value })} placeholder="Ex: FAC-2026-010" />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Pièce jointe (optionnel)</label>
+                <input className="input" style={{ width: '100%' }} value={ecritureModal.piece_ref} onChange={e => setEcritureModal(m => m && { ...m, piece_ref: e.target.value })} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Libellé</label>
+              <input className="input" style={{ width: '100%' }} value={ecritureModal.libelle} onChange={e => setEcritureModal(m => m && { ...m, libelle: e.target.value })} placeholder="Ex: Règlement fournisseur ACME" />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Montant</label>
+                <input className="input" type="number" min="0" step="0.01" style={{ width: '100%' }} value={ecritureModal.montant} onChange={e => setEcritureModal(m => m && { ...m, montant: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Type</label>
+                <select className="select" style={{ width: '100%' }} value={ecritureModal.type} onChange={e => setEcritureModal(m => m && { ...m, type: e.target.value as 'DEBIT' | 'CREDIT' })}>
+                  <option value="DEBIT">Débit</option>
+                  <option value="CREDIT">Crédit</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Date d'écriture</label>
+                <input className="input" type="date" style={{ width: '100%' }} value={ecritureModal.date_ecriture} onChange={e => setEcritureModal(m => m && { ...m, date_ecriture: e.target.value })} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, marginBottom: 6, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Date valeur (optionnel)</label>
+                <input className="input" type="date" style={{ width: '100%' }} value={ecritureModal.date_valeur} onChange={e => setEcritureModal(m => m && { ...m, date_valeur: e.target.value })} />
+              </div>
+            </div>
+
+            {ecritureError && <div style={{ marginBottom: 12, fontSize: 12, color: 'var(--danger)' }}>{ecritureError}</div>}
+
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-ghost" onClick={() => setEcritureModal(null)}>Annuler</button>
+              <button className="btn btn-primary" onClick={submitEcriture} disabled={savingEcriture}>
+                <Save size={15} /> {savingEcriture ? 'Enregistrement...' : 'Enregistrer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Message */}
       {msg && (
         <div style={{ padding: '8px 14px', borderRadius: 8, marginBottom: 8, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8, background: msg.type === 'success' ? '#d1fae5' : '#fee2e2', color: msg.type === 'success' ? '#065f46' : '#991b1b', border: `1px solid ${msg.type === 'success' ? '#6ee7b7' : '#fca5a5'}` }}>
@@ -336,7 +458,15 @@ export default function ReconciliationWorkspace() {
           <div className="panel-header" style={{ borderBottom: '1px solid var(--border)' }}>
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--primary)' }} />
             <span style={{ fontWeight: 700, fontSize: 14 }}>Écritures Comptables</span>
-            <span className="badge badge-info" style={{ marginLeft: 'auto' }}>{ecritures.filter(e => !e.lettree).length} non lettrées</span>
+            <span className="badge badge-info">{ecritures.filter(e => !e.lettree).length} non lettrées</span>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+              <Link to="/reconciliation/ecritures-import" className="btn btn-ghost btn-sm" title="Importer des écritures depuis un fichier">
+                <Upload size={13} /> Importer
+              </Link>
+              <button className="btn btn-primary btn-sm" onClick={openEcritureModal} disabled={!selectedCompte} title={!selectedCompte ? 'Sélectionnez un compte' : undefined}>
+                <Plus size={13} /> Ajouter
+              </button>
+            </div>
           </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <table>
