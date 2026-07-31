@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import {
   BookOpen, Keyboard, GitMerge, Upload, BarChart2,
-  Shield, Clock, ChevronRight, HelpCircle, Zap
+  Shield, Clock, ChevronRight, HelpCircle, Zap,
+  FileSpreadsheet, Lock, Users
 } from 'lucide-react';
 
 const KEYBOARD_SHORTCUTS = [
@@ -26,14 +27,27 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <FileSpreadsheet size={20} color="#f59e0b" />,
+    title: 'Écritures Comptables',
+    color: '#f59e0b',
+    steps: [
+      'Depuis l\'espace de rapprochement, cliquez "Ajouter" pour saisir une écriture manuellement (référence, libellé, montant, type, dates).',
+      'Pour un lot d\'écritures, accédez à Rapprochement > Import Écritures.',
+      'Sélectionnez le compte bancaire cible, puis glissez-déposez un ou plusieurs fichiers .xlsx/.csv/.pdf.',
+      'Cliquez "Prévisualiser" pour vérifier les totaux débit/crédit et repérer les lignes invalides ou incertaines avant de valider.',
+      'Cliquez "Valider l\'import" — les écritures créées apparaissent immédiatement dans l\'espace de rapprochement.',
+      'Une période verrouillée ou close bloque la saisie manuelle et fait ignorer les lignes concernées lors d\'un import en lot (sans bloquer le reste du lot).',
+    ],
+  },
+  {
     icon: <Upload size={20} color="#10b981" />,
-    title: 'Import de Relevé Excel',
+    title: 'Import de Relevé Bancaire',
     color: '#10b981',
     steps: [
       'Accédez à Rapprochement > Import Excel.',
       'Sélectionnez le compte bancaire cible.',
-      'Glissez-déposez votre fichier .xlsx/.csv ou cliquez pour le sélectionner.',
-      'Vérifiez l\'aperçu des 5 premières lignes (colonnes Date, Montant, Libelle, Référence).',
+      'Glissez-déposez votre fichier .xlsx/.csv/.pdf ou cliquez pour le sélectionner (plusieurs fichiers/pages possibles).',
+      'Vérifiez l\'aperçu (totaux débit/crédit, lignes invalides/incertaines) avant de valider.',
       'Cliquez "Lancer l\'import". Le traitement s\'effectue en arrière-plan avec suivi temps réel.',
     ],
   },
@@ -49,6 +63,17 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <Lock size={20} color="#dc2626" />,
+    title: 'Sécurité & Session',
+    color: '#dc2626',
+    steps: [
+      'Après 5 minutes d\'inactivité, une alerte de déconnexion s\'affiche avec un décompte d\'1 minute avant fermeture automatique de la session.',
+      'Toute action dans l\'application (clic, saisie, navigation) réinitialise ce délai.',
+      'Après 5 échecs de connexion consécutifs, le compte est temporairement verrouillé quelques minutes.',
+      'Le mot de passe peut être réinitialisé via "Mot de passe oublié" sur l\'écran de connexion, ou par un administrateur (Hiérarchie > Utilisateurs).',
+    ],
+  },
+  {
     icon: <Shield size={20} color="#e94560" />,
     title: 'Périodes Comptables',
     color: '#e94560',
@@ -58,6 +83,19 @@ const SECTIONS = [
       'Une période VERROUILLÉE bloque toute modification (réversible par le Manager/DAF).',
       'Une période CLOSE est définitivement verrouillée — aucune modification n\'est possible.',
       'Toute tentative d\'opération sur une période fermée retourne une erreur 423.',
+    ],
+  },
+  {
+    icon: <Users size={20} color="#0891b2" />,
+    title: 'Rattachement & Périmètre d\'accès',
+    color: '#0891b2',
+    adminOnly: true,
+    steps: [
+      'Chaque utilisateur est rattaché à un seul niveau de la hiérarchie : Entreprise, Succursale, Direction ou Service (Administration > Hiérarchie > Utilisateurs > Ajouter/Modifier).',
+      'Ce niveau détermine le périmètre des données bancaires visibles : banques, comptes bancaires, relevés et écritures comptables.',
+      'Un rattachement Entreprise voit toutes les succursales de son entreprise. Un rattachement Succursale, Direction ou Service ne voit que les données de sa propre succursale.',
+      'Les rôles Super Admin et Admin Tenant ne sont soumis à aucune restriction de périmètre : ils voient toutes les entreprises du tenant.',
+      'Changer le rattachement d\'un utilisateur prend effet à sa prochaine connexion (le jeton d\'accès déjà émis reste valide jusqu\'à son expiration, 15 minutes maximum).',
     ],
   },
   {
@@ -75,6 +113,7 @@ const SECTIONS = [
 
 export default function HelpPage({ isAdmin = false }: { isAdmin?: boolean }) {
   const [activeSection, setActiveSection] = useState(0);
+  const sections = SECTIONS.filter(s => !s.adminOnly || isAdmin);
 
   return (
     <div>
@@ -113,7 +152,7 @@ export default function HelpPage({ isAdmin = false }: { isAdmin?: boolean }) {
       <div style={{ display: 'grid', gridTemplateColumns: '240px 1fr', gap: 20 }}>
         {/* Sidebar navigation */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          {SECTIONS.map((s, i) => (
+          {sections.map((s, i) => (
             <button
               key={i}
               onClick={() => setActiveSection(i)}
@@ -138,7 +177,7 @@ export default function HelpPage({ isAdmin = false }: { isAdmin?: boolean }) {
               background: 'transparent', color: 'var(--text)', fontSize: 13,
               transition: 'all 0.15s',
             }}
-            onClick={() => setActiveSection(SECTIONS.length)}
+            onClick={() => setActiveSection(sections.length)}
           >
             <Keyboard size={18} color="#e94560" /> Raccourcis clavier
           </button>
@@ -146,14 +185,14 @@ export default function HelpPage({ isAdmin = false }: { isAdmin?: boolean }) {
 
         {/* Content */}
         <div className="card" style={{ padding: 28 }}>
-          {activeSection < SECTIONS.length ? (
+          {activeSection < sections.length ? (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, paddingBottom: 16, borderBottom: '1px solid var(--border)' }}>
-                {SECTIONS[activeSection].icon}
-                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{SECTIONS[activeSection].title}</h2>
+                {sections[activeSection].icon}
+                <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>{sections[activeSection].title}</h2>
               </div>
               <ol style={{ margin: 0, padding: '0 0 0 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {SECTIONS[activeSection].steps.map((step, i) => (
+                {sections[activeSection].steps.map((step, i) => (
                   <li key={i} style={{ paddingLeft: 8 }}>
                     <div style={{ fontSize: 14, lineHeight: 1.6 }}>{step}</div>
                   </li>
