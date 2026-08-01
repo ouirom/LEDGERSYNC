@@ -590,6 +590,12 @@ model Rapprochement {
   valide_final_par      Int?
   date_validation_final DateTime?
   motif_rejet           String?             @db.Text
+  // Traçabilité d'une réouverture exceptionnelle après validation finale — voir
+  // POST /:id/reopen-finalized. Conservés même après une nouvelle validation
+  // complète, pour garder une trace visible qu'une correction a eu lieu.
+  reouvert_par          Int?
+  date_reouverture      DateTime?
+  motif_reouverture     String?             @db.Text
   pv_url                String?             @db.VarChar(500)
   etat                  EtatGeneral         @default(BROUILLON)
   created_at            DateTime            @default(now())

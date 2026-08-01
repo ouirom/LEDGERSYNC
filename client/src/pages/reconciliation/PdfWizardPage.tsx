@@ -15,6 +15,9 @@ interface Rapprochement {
   montant_ecart: number;
   pv_url: string | null;
   motif_rejet?: string | null;
+  reouvert_par?: number | null;
+  date_reouverture?: string | null;
+  motif_reouverture?: string | null;
   created_by?: number | null;
   compte_bancaire: { intitule: string; banque: { nom: string } };
   entreprise: { nom: string };
@@ -138,6 +141,28 @@ export default function PdfWizardPage() {
     try {
       await api.post(`/reconciliation/${rapp.id}/reopen`);
       setMsg({ type: 'success', text: 'Rapprochement réouvert en brouillon' });
+      refreshList(rapp.id);
+    } catch (err) {
+      setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la réouverture') });
+    } finally {
+      setActing(false);
+      setTimeout(() => setMsg(null), 4000);
+    }
+  };
+
+  // Réouverture exceptionnelle après validation finale (erreur découverte trop
+  // tard) : remet le rapprochement en brouillon, la correction devra repasser
+  // par tout le circuit dual-control (soumission + 3 validations).
+  const reopenFinalizedRapprochement = async (rapp: Rapprochement) => {
+    const motif = await dialog.prompt('Motif de la réouverture exceptionnelle :', {
+      title: 'Réouvrir un rapprochement validé', minLength: 5, confirmLabel: 'Réouvrir', tone: 'danger',
+      placeholder: 'Ex. : montant erroné détecté après validation finale',
+    });
+    if (motif === null) return;
+    setActing(true);
+    try {
+      await api.post(`/reconciliation/${rapp.id}/reopen-finalized`, { motif });
+      setMsg({ type: 'success', text: 'Rapprochement réouvert — à resoumettre pour validation complète' });
       refreshList(rapp.id);
     } catch (err) {
       setMsg({ type: 'error', text: apiErrorMessage(err, 'Erreur lors de la réouverture') });
@@ -277,6 +302,17 @@ export default function PdfWizardPage() {
                 </div>
               )}
 
+              {selected.motif_reouverture && (
+                <div style={{ display: 'flex', gap: 8, padding: '10px 12px', background: '#fef3c7', border: '1px solid #fcd34d', borderRadius: 8, marginBottom: 12, fontSize: 12, color: '#92400e' }}>
+                  <AlertCircle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
+                  <div>
+                    <strong>Réouvert après validation finale</strong>
+                    {selected.date_reouverture && ` le ${new Date(selected.date_reouverture).toLocaleDateString('fr-FR')}`}
+                    {' '}: {selected.motif_reouverture}
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {selected.statut === 'BROUILLON' && (
                   <button className="btn btn-primary" style={{ justifyContent: 'center' }} onClick={() => submitRaprochement(selected)}>
@@ -309,6 +345,18 @@ export default function PdfWizardPage() {
                 {selected.statut === 'REJETE' && hasRole(...VALIDATOR_ROLES) && (
                   <button className="btn btn-ghost" style={{ justifyContent: 'center' }} disabled={acting} onClick={() => reopenRapprochement(selected)}>
                     <RotateCcw size={16} /> Réouvrir en brouillon
+                  </button>
+                )}
+
+                {['VALIDE_FINAL', 'CLOS'].includes(selected.statut) && hasRole('DAF', 'ADMIN_TENANT', 'SUPER_ADMIN') && (
+                  <button
+                    className="btn btn-danger"
+                    style={{ justifyContent: 'center' }}
+                    disabled={acting}
+                    onClick={() => reopenFinalizedRapprochement(selected)}
+                    title="Erreur découverte après la validation finale — remet le rapprochement en brouillon pour correction, à resoumettre en entier"
+                  >
+                    <RotateCcw size={16} /> Réouvrir (correction exceptionnelle)
                   </button>
                 )}
 

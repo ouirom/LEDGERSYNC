@@ -584,6 +584,59 @@ router.post('/:id/reopen', async (req: AuthRequest, res: Response): Promise<void
   }
 });
 
+// ── POST /api/reconciliation/:id/reopen-finalized ────────────
+// Réouverture exceptionnelle d'un rapprochement déjà VALIDE_FINAL (ou CLOS) :
+// jusqu'ici aucune erreur découverte après la signature finale du DAF ne
+// pouvait être corrigée (reject/reopen ne s'appliquent qu'à SOUMIS/N1/N2/
+// REJETE). Réservée aux rôles de plus haut niveau, motif obligatoire, et la
+// chaîne de validation est intégralement remise à zéro : la correction devra
+// repasser par tout le circuit dual-control plutôt que d'être resignée
+// silencieusement par une seule personne.
+router.post('/:id/reopen-finalized', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  const { motif } = req.body as { motif: string };
+  if (!motif || motif.trim().length < 5) {
+    res.status(400).json({ success: false, message: 'Motif de réouverture obligatoire (min. 5 caractères)' }); return;
+  }
+  if (!['DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'].includes(req.user!.role)) {
+    res.status(403).json({ success: false, message: 'Rôle insuffisant pour rouvrir un rapprochement validé' }); return;
+  }
+
+  try {
+    const rapprochement = await prisma.rapprochement.findFirst({ where: { id, entreprise: { tenant_id: req.user!.tenantId } } });
+    if (!rapprochement) { res.status(404).json({ success: false, message: 'Rapprochement non trouvé' }); return; }
+    if (!['VALIDE_FINAL', 'CLOS'].includes(rapprochement.statut)) {
+      res.status(409).json({ success: false, message: 'Seul un rapprochement validé (final) ou clos peut être réouvert de cette façon' }); return;
+    }
+    if (rapprochement.valide_final_par === req.user!.userId) {
+      res.status(403).json({ success: false, message: 'Séparation des fonctions : vous ne pouvez pas rouvrir un rapprochement que vous avez vous-même validé en dernier lieu', code: 'DUAL_CONTROL_VIOLATION' });
+      return;
+    }
+
+    const updated = await prisma.rapprochement.update({
+      where: { id },
+      data: {
+        statut: 'BROUILLON',
+        soumis_par: null, valide_n1_par: null, valide_n2_par: null, valide_final_par: null, date_validation_final: null,
+        reouvert_par: req.user!.userId, date_reouverture: new Date(), motif_reouverture: motif,
+        updated_by: req.user!.userId,
+      },
+    });
+
+    await createAuditEntry({
+      tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RAPPROCHEMENT', entiteId: id, action: 'REOPEN_FINALIZED',
+      avant: { statut: rapprochement.statut }, apres: { statut: 'BROUILLON' }, motif, ipAddress: req.ip,
+    });
+
+    const io = getIO();
+    io.to(`tenant-${req.user!.tenantId}`).emit('rapprochement:updated', { id, statut: 'BROUILLON' });
+
+    res.json({ success: true, data: updated, message: 'Rapprochement réouvert — la correction devra être resoumise pour validation complète.' });
+  } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
 // ── GET /api/reconciliation/list ─────────────────────────────
 // Liste des rapprochements du tenant avec inclusions
 router.get('/list', async (req: AuthRequest, res: Response): Promise<void> => {
