@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { FileText, ChevronRight, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
+import { FileText, ChevronRight, ChevronLeft, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
 import { useDialog } from '../../contexts/DialogContext';
 import { apiErrorMessage } from '../../utils/errors';
+import type { Compte, Entreprise } from '../../types/api';
 
 const VALIDATOR_ROLES = ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'];
 
@@ -45,6 +46,20 @@ const WORKFLOW_STEPS = [
   { key: 'CLOS', label: 'Clos & PV', desc: 'PV officiel généré' },
 ];
 
+const STATUT_OPTIONS = [
+  { value: '', label: 'Tous les statuts' },
+  { value: 'BROUILLON', label: 'Brouillon' },
+  { value: 'SOUMIS', label: 'Soumis' },
+  { value: 'VALIDE_N1', label: 'Validé N1' },
+  { value: 'VALIDE_N2', label: 'Validé N2' },
+  { value: 'VALIDE_FINAL', label: 'Validé Final' },
+  { value: 'REJETE', label: 'Rejeté' },
+  { value: 'CLOS', label: 'Clos' },
+];
+
+const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'];
+const PAGE_SIZE = 20;
+
 export default function PdfWizardPage() {
   const dialog = useDialog();
   const { hasRole } = useAuth();
@@ -55,20 +70,61 @@ export default function PdfWizardPage() {
   const [acting, setActing] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
+  const [comptes, setComptes] = useState<Compte[]>([]);
+  const [filterEntreprise, setFilterEntreprise] = useState('');
+  const [filterCompte, setFilterCompte] = useState('');
+  const [filterStatut, setFilterStatut] = useState('');
+  const [filterMois, setFilterMois] = useState('');
+  const [filterAnnee, setFilterAnnee] = useState('');
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+  useEffect(() => {
+    api.get('/entreprises').then(r => setEntreprises(r.data.data || [])).catch(() => setEntreprises([]));
+    api.get('/comptes').then(r => setComptes(r.data.data || [])).catch(() => setComptes([]));
+  }, []);
+
+  const buildParams = () => {
+    const params: Record<string, string> = { limit: String(PAGE_SIZE), offset: String((page - 1) * PAGE_SIZE) };
+    if (filterEntreprise) params['entreprise_id'] = filterEntreprise;
+    if (filterCompte) params['compte_bancaire_id'] = filterCompte;
+    if (filterStatut) params['statut'] = filterStatut;
+    if (filterMois) params['mois'] = filterMois;
+    if (filterAnnee) params['annee'] = filterAnnee;
+    return params;
+  };
+
   const refreshList = (keepSelectedId?: number) => {
-    api.get('/reconciliation/list?limit=50').then(r => {
+    api.get('/reconciliation/list', { params: buildParams() }).then(r => {
       const data = r.data.data || [];
       setRapprochements(data);
+      setTotal(r.data.meta?.total || 0);
       if (keepSelectedId) setSelected(data.find((r: Rapprochement) => r.id === keepSelectedId) || null);
     });
   };
 
+  useEffect(() => { setPage(1); }, [filterEntreprise, filterCompte, filterStatut, filterMois, filterAnnee]);
+
   useEffect(() => {
-    api.get('/reconciliation/list?limit=50')
-      .then(r => setRapprochements(r.data.data || []))
-      .catch(() => setRapprochements([]))
+    setLoading(true);
+    api.get('/reconciliation/list', { params: buildParams() })
+      .then(r => { setRapprochements(r.data.data || []); setTotal(r.data.meta?.total || 0); })
+      .catch(() => { setRapprochements([]); setTotal(0); })
       .finally(() => setLoading(false));
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterEntreprise, filterCompte, filterStatut, filterMois, filterAnnee, page]);
+
+  const comptesForEntreprise = filterEntreprise ? comptes.filter(c => c.entreprise_id === parseInt(filterEntreprise)) : comptes;
+
+  const handleEntrepriseFilter = (value: string) => {
+    setFilterEntreprise(value);
+    // Le compte sélectionné peut ne plus appartenir à l'entreprise choisie
+    if (filterCompte && !comptes.find(c => String(c.id) === filterCompte && (!value || c.entreprise_id === parseInt(value)))) {
+      setFilterCompte('');
+    }
+  };
 
   const generatePV = async (rapp: Rapprochement) => {
     setGenerating(true);
@@ -193,11 +249,46 @@ export default function PdfWizardPage() {
         </div>
       )}
 
+      {/* Filtres */}
+      <div className="card" style={{ padding: 16, marginBottom: 16, display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Entreprise</label>
+          <select className="select" value={filterEntreprise} onChange={e => handleEntrepriseFilter(e.target.value)} style={{ minWidth: 160 }}>
+            <option value="">Toutes</option>
+            {entreprises.map(e => <option key={e.id} value={e.id}>{e.nom}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Compte</label>
+          <select className="select" value={filterCompte} onChange={e => setFilterCompte(e.target.value)} style={{ minWidth: 180 }}>
+            <option value="">Tous les comptes</option>
+            {comptesForEntreprise.map(c => <option key={c.id} value={c.id}>{c.intitule}{c.banque ? ` (${c.banque.nom})` : ''}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Statut</label>
+          <select className="select" value={filterStatut} onChange={e => setFilterStatut(e.target.value)} style={{ minWidth: 160 }}>
+            {STATUT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Mois</label>
+          <select className="select" value={filterMois} onChange={e => setFilterMois(e.target.value)}>
+            <option value="">Tous</option>
+            {MOIS_LABELS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: 'block', fontSize: 11, fontWeight: 600, marginBottom: 4, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Année</label>
+          <input className="input" style={{ width: 90 }} placeholder="Toutes" value={filterAnnee} onChange={e => setFilterAnnee(e.target.value)} />
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1.4fr' : '1fr', gap: 20 }}>
         {/* List */}
         <div>
           <div style={{ marginBottom: 12, fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Rapprochements ({rapprochements.length})
+            Rapprochements ({total})
           </div>
           {loading ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -238,6 +329,16 @@ export default function PdfWizardPage() {
                   </div>
                 </div>
               ))}
+            </div>
+          )}
+
+          {total > PAGE_SIZE && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 12, fontSize: 12, color: 'var(--text-muted)' }}>
+              <span>Page {page} / {totalPages}</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button className="btn btn-ghost btn-sm btn-icon" disabled={page <= 1} onClick={() => setPage(p => Math.max(1, p - 1))}><ChevronLeft size={14} /></button>
+                <button className="btn btn-ghost btn-sm btn-icon" disabled={page >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))}><ChevronRight size={14} /></button>
+              </div>
             </div>
           )}
         </div>

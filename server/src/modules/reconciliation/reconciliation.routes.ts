@@ -638,27 +638,37 @@ router.post('/:id/reopen-finalized', async (req: AuthRequest, res: Response): Pr
 });
 
 // ── GET /api/reconciliation/list ─────────────────────────────
-// Liste des rapprochements du tenant avec inclusions
+// Liste des rapprochements du tenant avec inclusions, filtrable et scopée
+// au périmètre organisationnel de l'utilisateur (via son compte bancaire —
+// Rapprochement ne porte pas lui-même de succursale_id/sous_succursale_id).
 router.get('/list', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { limit = '50', offset = '0', statut } = req.query;
+  const { limit = '50', offset = '0', statut, entreprise_id, compte_bancaire_id, mois, annee } = req.query;
   try {
-    const rapprochements = await prisma.rapprochement.findMany({
-      where: {
-        entreprise: { tenant_id: req.user!.tenantId },
-        ...(statut ? { statut: statut as StatutRapprochement } : {}),
-      },
-      include: {
-        entreprise: { select: { id: true, nom: true, code: true } },
-        compte_bancaire: { include: { banque: { select: { id: true, nom: true } } } },
-        justificatifs: { select: { id: true, nom_fichier: true, url_fichier: true, type_fichier: true } },
-      },
-      orderBy: [{ periode_annee: 'desc' }, { periode_mois: 'desc' }],
-      take: parseInt(limit as string),
-      skip: parseInt(offset as string),
-    });
-    const total = await prisma.rapprochement.count({
-      where: { entreprise: { tenant_id: req.user!.tenantId } },
-    });
+    const scope = await resolveOrgScope(req.user!);
+    const where: Prisma.RapprochementWhereInput = {
+      entreprise: { tenant_id: req.user!.tenantId },
+      compte_bancaire: { ...orgScopeWhere(scope) },
+      ...(statut ? { statut: statut as StatutRapprochement } : {}),
+      ...(entreprise_id ? { entreprise_id: parseInt(entreprise_id as string) } : {}),
+      ...(compte_bancaire_id ? { compte_bancaire_id: parseInt(compte_bancaire_id as string) } : {}),
+      ...(mois ? { periode_mois: parseInt(mois as string) } : {}),
+      ...(annee ? { periode_annee: parseInt(annee as string) } : {}),
+    };
+
+    const [rapprochements, total] = await Promise.all([
+      prisma.rapprochement.findMany({
+        where,
+        include: {
+          entreprise: { select: { id: true, nom: true, code: true } },
+          compte_bancaire: { include: { banque: { select: { id: true, nom: true } } } },
+          justificatifs: { select: { id: true, nom_fichier: true, url_fichier: true, type_fichier: true } },
+        },
+        orderBy: [{ periode_annee: 'desc' }, { periode_mois: 'desc' }],
+        take: parseInt(limit as string),
+        skip: parseInt(offset as string),
+      }),
+      prisma.rapprochement.count({ where }),
+    ]);
     res.json({ success: true, data: rapprochements, meta: { total } });
   } catch (err) {
     console.error('[RECONCILIATION/LIST]', err);
