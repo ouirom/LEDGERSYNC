@@ -642,12 +642,13 @@ router.post('/:id/reopen-finalized', async (req: AuthRequest, res: Response): Pr
 // au périmètre organisationnel de l'utilisateur (via son compte bancaire —
 // Rapprochement ne porte pas lui-même de succursale_id/sous_succursale_id).
 router.get('/list', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { limit = '50', offset = '0', statut, entreprise_id, compte_bancaire_id, mois, annee } = req.query;
+  const { limit = '50', offset = '0', statut, entreprise_id, compte_bancaire_id, mois, annee, id } = req.query;
   try {
     const scope = await resolveOrgScope(req.user!);
     const where: Prisma.RapprochementWhereInput = {
       entreprise: { tenant_id: req.user!.tenantId },
       compte_bancaire: { ...orgScopeWhere(scope) },
+      ...(id ? { id: parseInt(id as string) } : {}),
       ...(statut ? { statut: statut as StatutRapprochement } : {}),
       ...(entreprise_id ? { entreprise_id: parseInt(entreprise_id as string) } : {}),
       ...(compte_bancaire_id ? { compte_bancaire_id: parseInt(compte_bancaire_id as string) } : {}),

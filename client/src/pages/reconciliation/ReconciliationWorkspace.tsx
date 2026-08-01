@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Check, X, Zap, AlertCircle, RefreshCw, Columns, Undo2, FileCheck2, Scale, Rows3, Columns3, Plus, Save, Upload } from 'lucide-react';
 import api from '../../api/axios';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { apiErrorMessage } from '../../utils/errors';
 import { useDialog } from '../../contexts/DialogContext';
 import type { Compte, ImputationCategorie, AutoMatchSuggestion } from '../../types/api';
@@ -33,10 +33,12 @@ const EMPTY_ECRITURE_FORM: EcritureFormState = { reference: '', libelle: '', mon
 
 export default function ReconciliationWorkspace() {
   const dialog = useDialog();
+  const location = useLocation();
+  const navState = location.state as { compteId?: string; mois?: string; annee?: string } | null;
   const [comptes, setComptes] = useState<Compte[]>([]);
-  const [selectedCompte, setSelectedCompte] = useState('');
-  const [mois, setMois] = useState(String(new Date().getMonth() + 1));
-  const [annee, setAnnee] = useState(String(new Date().getFullYear()));
+  const [selectedCompte, setSelectedCompte] = useState(navState?.compteId || '');
+  const [mois, setMois] = useState(navState?.mois || String(new Date().getMonth() + 1));
+  const [annee, setAnnee] = useState(navState?.annee || String(new Date().getFullYear()));
   const [ecritures, setEcritures] = useState<Ecriture[]>([]);
   const [releves, setReleves] = useState<Releve[]>([]);
   const [loading, setLoading] = useState(false);

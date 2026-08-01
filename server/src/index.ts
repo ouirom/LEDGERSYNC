@@ -30,6 +30,7 @@ import themeRoutes from './modules/themes/theme.routes';
 import imputationRoutes from './modules/imputations/imputation.routes';
 import userRoutes from './modules/users/user.routes';
 import parametresRoutes from './modules/settings/parametres.routes';
+import notificationRoutes from './modules/notifications/notifications.routes';
 
 const app = express();
 const httpServer = createServer(app);
@@ -103,6 +104,7 @@ app.use('/api/themes', themeRoutes);
 app.use('/api/imputations', imputationRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/parametres', parametresRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 // ── 404 Handler ─────────────────────────────────────────────
 app.use((_req, res) => {

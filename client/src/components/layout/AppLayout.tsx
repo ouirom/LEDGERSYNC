@@ -4,12 +4,31 @@ import {
   LayoutDashboard, GitMerge, Upload, Briefcase, Settings,
   Shield, ChevronLeft, ChevronRight, Bell, Moon, Sun,
   User, LogOut, Wifi, WifiOff, FileText, FilePen,
-  HelpCircle, Palette, Building2, Search, X, Command, Settings2, FileSpreadsheet, BookText, Landmark
+  HelpCircle, Palette, Building2, Search, X, Command, Settings2, FileSpreadsheet, BookText, Landmark,
+  AlertTriangle, ClipboardCheck
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSocket } from '../../contexts/SocketContext';
+import api from '../../api/axios';
 import SessionTimeoutGuard from './SessionTimeoutGuard';
+
+const MOIS_COURT = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
+
+interface NotifItem {
+  id: number;
+  entreprise: string;
+  compte: string;
+  compte_bancaire_id: number;
+  periode_mois: number;
+  periode_annee: number;
+  statut: string;
+  montant_ecart: number;
+}
+interface NotifSummary {
+  validationsEnAttente: { total: number; items: NotifItem[] };
+  ecartsNonResolus: { total: number; items: NotifItem[] };
+}
 
 const NAV_GROUPS = [
   {
@@ -80,9 +99,45 @@ const SEARCH_INDEX = [
 export default function AppLayout() {
   const { user, logout, hasRole } = useAuth();
   const { isDark, toggleDark } = useTheme();
-  const { connected } = useSocket();
+  const { connected, socket } = useSocket();
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+
+  // Notifications: dérivées à la volée côté serveur (pas de table dédiée) —
+  // rafraîchies périodiquement et sur les événements socket déjà émis par le
+  // module de rapprochement, pour rester à jour sans polling agressif.
+  const [notifSummary, setNotifSummary] = useState<NotifSummary | null>(null);
+  const [notifOpen, setNotifOpen] = useState(false);
+  const notifTotal = (notifSummary?.validationsEnAttente.total ?? 0) + (notifSummary?.ecartsNonResolus.total ?? 0);
+
+  const fetchNotifications = useCallback(() => {
+    api.get('/notifications/summary').then(r => setNotifSummary(r.data.data)).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetchNotifications();
+    const interval = setInterval(fetchNotifications, 60000);
+    return () => clearInterval(interval);
+  }, [fetchNotifications]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.on('rapprochement:updated', fetchNotifications);
+    socket.on('lettrage:created', fetchNotifications);
+    return () => {
+      socket.off('rapprochement:updated', fetchNotifications);
+      socket.off('lettrage:created', fetchNotifications);
+    };
+  }, [socket, fetchNotifications]);
+
+  const goToValidation = (item: NotifItem) => {
+    navigate(`/reconciliation/pdf-wizard?rapprochement_id=${item.id}`);
+    setNotifOpen(false);
+  };
+  const goToEcart = (item: NotifItem) => {
+    navigate('/reconciliation/workspace', { state: { compteId: String(item.compte_bancaire_id), mois: String(item.periode_mois), annee: String(item.periode_annee) } });
+    setNotifOpen(false);
+  };
 
   // Global search state
   const [searchOpen, setSearchOpen] = useState(false);
@@ -276,11 +331,81 @@ export default function AppLayout() {
             </span>
           </button>
 
-          {/* Notifications placeholder */}
-          <button className="btn btn-ghost btn-icon" style={{ position: 'relative' }}>
-            <Bell size={18} />
-            <span style={{ position: 'absolute', top: 6, right: 6, width: 7, height: 7, background: 'var(--accent)', borderRadius: '50%', border: '1.5px solid var(--bg-card)' }} />
-          </button>
+          {/* Notifications */}
+          <div style={{ position: 'relative' }}>
+            <button className="btn btn-ghost btn-icon" style={{ position: 'relative' }} onClick={() => setNotifOpen(o => !o)} title="Notifications">
+              <Bell size={18} />
+              {notifTotal > 0 && (
+                <span style={{ position: 'absolute', top: 2, right: 2, minWidth: 15, height: 15, padding: '0 3px', background: 'var(--danger, #dc2626)', borderRadius: 20, border: '1.5px solid var(--bg-card)', fontSize: 9, fontWeight: 700, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {notifTotal > 9 ? '9+' : notifTotal}
+                </span>
+              )}
+            </button>
+
+            {notifOpen && (
+              <>
+                <div onClick={() => setNotifOpen(false)} style={{ position: 'fixed', inset: 0, zIndex: 40 }} />
+                <div style={{ position: 'absolute', top: '120%', right: 0, width: 360, maxHeight: 440, overflowY: 'auto', background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', zIndex: 50 }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 13, color: 'var(--text)' }}>Notifications</div>
+                  {notifTotal === 0 ? (
+                    <div style={{ padding: 28, textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+                      <Bell size={22} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
+                      <div>Aucune alerte</div>
+                    </div>
+                  ) : (
+                    <>
+                      {notifSummary!.validationsEnAttente.total > 0 && (
+                        <div>
+                          <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                            Validations en attente ({notifSummary!.validationsEnAttente.total})
+                          </div>
+                          {notifSummary!.validationsEnAttente.items.map(item => (
+                            <button
+                              key={`v-${item.id}`}
+                              onClick={() => goToValidation(item)}
+                              style={{ display: 'flex', gap: 10, width: '100%', textAlign: 'left', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              <ClipboardCheck size={14} style={{ flexShrink: 0, color: 'var(--primary)', marginTop: 2 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{item.entreprise} · {MOIS_COURT[item.periode_mois]} {item.periode_annee}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.compte}</div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {notifSummary!.ecartsNonResolus.total > 0 && (
+                        <div>
+                          <div style={{ padding: '10px 16px 4px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: 0.4 }}>
+                            Écarts non résolus ({notifSummary!.ecartsNonResolus.total})
+                          </div>
+                          {notifSummary!.ecartsNonResolus.items.map(item => (
+                            <button
+                              key={`e-${item.id}`}
+                              onClick={() => goToEcart(item)}
+                              style={{ display: 'flex', gap: 10, width: '100%', textAlign: 'left', padding: '8px 16px', border: 'none', background: 'transparent', cursor: 'pointer' }}
+                              onMouseEnter={e => (e.currentTarget.style.background = 'var(--bg)')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              <AlertTriangle size={14} style={{ flexShrink: 0, color: 'var(--danger, #dc2626)', marginTop: 2 }} />
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)' }}>{item.entreprise} · {MOIS_COURT[item.periode_mois]} {item.periode_annee}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {item.compte} — écart de {Number(item.montant_ecart).toLocaleString('fr-FR')}
+                                </div>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
 
           {/* Dark mode toggle */}
           <button className="btn btn-ghost btn-icon" onClick={toggleDark} title="Basculer le thème">

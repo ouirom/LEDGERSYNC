@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { FileText, ChevronRight, ChevronLeft, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
@@ -84,6 +85,18 @@ export default function PdfWizardPage() {
   useEffect(() => {
     api.get('/entreprises').then(r => setEntreprises(r.data.data || [])).catch(() => setEntreprises([]));
     api.get('/comptes').then(r => setComptes(r.data.data || [])).catch(() => setComptes([]));
+  }, []);
+
+  // Arrivée depuis une notification (cloche) : sélectionne directement le
+  // rapprochement visé, indépendamment des filtres courants de la liste.
+  const [searchParams] = useSearchParams();
+  useEffect(() => {
+    const targetId = searchParams.get('rapprochement_id');
+    if (!targetId) return;
+    api.get('/reconciliation/list', { params: { id: targetId, limit: 1, offset: 0 } })
+      .then(r => { const found = (r.data.data || [])[0]; if (found) setSelected(found); })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const buildParams = () => {
