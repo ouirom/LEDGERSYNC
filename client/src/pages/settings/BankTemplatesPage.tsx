@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { FileSpreadsheet, Plus, Edit3, Trash2, Save, X, AlertCircle } from 'lucide-react';
 import api from '../../api/axios';
+import { useDialog } from '../../contexts/DialogContext';
 import type { Banque } from '../../types/api';
 
 interface BanqueTemplate {
@@ -23,6 +24,7 @@ const COLONNES_REQUISES = [
 ];
 
 export default function BankTemplatesPage() {
+  const dialog = useDialog();
   const [templates, setTemplates] = useState<BanqueTemplate[]>([]);
   const [banques, setBanques] = useState<Banque[]>([]);
   const [loading, setLoading] = useState(true);
@@ -70,17 +72,17 @@ export default function BankTemplatesPage() {
       setEditing(null);
       loadTemplates();
     } catch {
-      alert('Erreur lors de la sauvegarde du template');
+      await dialog.alert('Erreur lors de la sauvegarde du template', { tone: 'danger' });
     }
   };
 
   const handleDelete = async (t: BanqueTemplate) => {
-    if (!confirm(`Supprimer le template "${t.nom}" ?`)) return;
+    if (!(await dialog.confirm(`Supprimer le template "${t.nom}" ?`, { tone: 'danger', confirmLabel: 'Supprimer' }))) return;
     try {
       await api.delete(`/banques/templates/${t.id}`);
       loadTemplates();
     } catch {
-      alert('Erreur lors de la suppression du template');
+      await dialog.alert('Erreur lors de la suppression du template', { tone: 'danger' });
     }
   };
 

@@ -3,6 +3,7 @@ import { Upload, FileSpreadsheet, X, Loader2, ExternalLink, Eye, ArrowLeft, Aler
 import api from '../../api/axios';
 import { useSocket } from '../../contexts/SocketContext';
 import { apiErrorMessage } from '../../utils/errors';
+import { useDialog } from '../../contexts/DialogContext';
 import type { Compte, ImportPreview, ReleveBancaire } from '../../types/api';
 
 interface JobProgress { progression: number; lignesTraitees: number; totalLignes: number; etaSeconds?: number; statut: string; erreurMessage?: string; }
@@ -10,6 +11,7 @@ interface JobProgress { progression: number; lignesTraitees: number; totalLignes
 const fmtMontant = (v: number | null) => v === null ? '—' : v.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 export default function ExcelImportPage() {
+  const dialog = useDialog();
   const { socket, subscribeJob, unsubscribeJob } = useSocket();
   const [comptes, setComptes] = useState<Compte[]>([]);
   const [selectedCompte, setSelectedCompte] = useState('');
@@ -107,7 +109,7 @@ export default function ExcelImportPage() {
       setJobId(String(data.data.jobId));
       setProgress({ progression: 0, lignesTraitees: 0, totalLignes: preview?.total_lignes || 100, statut: 'EN_ATTENTE' });
     } catch (err) {
-      alert(apiErrorMessage(err, 'Erreur lors de l\'upload'));
+      await dialog.alert(apiErrorMessage(err, 'Erreur lors de l\'upload'), { tone: 'danger' });
     } finally {
       setUploading(false);
     }

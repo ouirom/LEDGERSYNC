@@ -3,6 +3,7 @@ import { Building2, Users, ChevronRight, ChevronDown, Plus, Shield, Briefcase, U
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDialog } from '../../contexts/DialogContext';
 import { ROLES_UTILISATEUR, type Entreprise, type Utilisateur, type RoleUtilisateur, type Pays } from '../../types/api';
 
 const ROLE_LABELS: Record<RoleUtilisateur, string> = {
@@ -188,6 +189,7 @@ const NIVEAU_LABELS: Record<Exclude<NiveauRattachement, ''>, string> = {
 
 export default function HierarchyPage() {
   const { user: currentUser, hasRole } = useAuth();
+  const dialog = useDialog();
   const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [utilisateurs, setUtilisateurs] = useState<Utilisateur[]>([]);
   const [pays, setPays] = useState<Pays[]>([]);
@@ -303,12 +305,12 @@ export default function HierarchyPage() {
 
   const handleDelete = async (node: HierarchyNode) => {
     if (node.type === 'entreprise') return;
-    if (!confirm(`Archiver "${node.nom}" (${TYPE_LABELS[node.type]}) ? Cette action peut être annulée en réactivant l'entité.`)) return;
+    if (!(await dialog.confirm(`Archiver "${node.nom}" (${TYPE_LABELS[node.type]}) ? Cette action peut être annulée en réactivant l'entité.`, { tone: 'danger', confirmLabel: 'Archiver' }))) return;
     try {
       await api.delete(`/hierarchy/${ENDPOINT[node.type as Exclude<NodeType, 'entreprise'>]}/${node.id}`);
       load();
     } catch (err) {
-      alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'));
+      await dialog.alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'), { tone: 'danger' });
     }
   };
 
@@ -429,12 +431,12 @@ export default function HierarchyPage() {
   };
 
   const handleDeleteUser = async (u: Utilisateur) => {
-    if (!confirm(`Archiver le compte de "${u.prenom} ${u.nom}" ? Il ne pourra plus se connecter.`)) return;
+    if (!(await dialog.confirm(`Archiver le compte de "${u.prenom} ${u.nom}" ? Il ne pourra plus se connecter.`, { tone: 'danger', confirmLabel: 'Archiver' }))) return;
     try {
       await api.delete(`/users/${u.id}`);
       load();
     } catch (err) {
-      alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'));
+      await dialog.alert(apiErrorMessage(err, 'Erreur lors de l\'archivage'), { tone: 'danger' });
     }
   };
 

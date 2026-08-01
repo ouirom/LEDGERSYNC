@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Landmark, Plus, Save, X, Edit3, Trash2, Download, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
+import { useDialog } from '../../contexts/DialogContext';
 import type { Compte } from '../../types/api';
 
 interface ReleveLigne {
@@ -34,6 +35,7 @@ const EMPTY_FORM: LigneFormState = { compte_bancaire_id: '', reference: '', libe
 const fmt = (n: number) => n.toLocaleString('fr-FR', { minimumFractionDigits: 2 });
 
 export default function RelevesPage() {
+  const dialog = useDialog();
   const [comptes, setComptes] = useState<Compte[]>([]);
   const [lignes, setLignes] = useState<ReleveLigne[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,7 +129,7 @@ export default function RelevesPage() {
   };
 
   const handleDeleteOne = async (l: ReleveLigne) => {
-    if (!confirm(`Supprimer la ligne "${l.libelle}" ?`)) return;
+    if (!(await dialog.confirm(`Supprimer la ligne "${l.libelle}" ?`, { tone: 'danger', confirmLabel: 'Supprimer' }))) return;
     const r = await deleteOne(l);
     if (r.ok) { load(); setBanner({ type: 'success', text: 'Ligne supprimée' }); }
     else setBanner({ type: 'error', text: `Action impossible : ${r.reason}` });
@@ -135,7 +137,7 @@ export default function RelevesPage() {
 
   const handleDeleteSelection = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`Supprimer les ${selected.size} ligne(s) sélectionnée(s) ?`)) return;
+    if (!(await dialog.confirm(`Supprimer les ${selected.size} ligne(s) sélectionnée(s) ?`, { tone: 'danger', confirmLabel: 'Supprimer' }))) return;
     setBulkWorking(true);
     let done = 0, skipped = 0;
     for (const id of selected) {

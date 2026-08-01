@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { FileText, ChevronRight, CheckCircle2, Download, Loader2, AlertCircle, FilePen, ShieldCheck, XCircle, RotateCcw } from 'lucide-react';
 import api from '../../api/axios';
 import { useAuth } from '../../contexts/AuthContext';
+import { useDialog } from '../../contexts/DialogContext';
 import { apiErrorMessage } from '../../utils/errors';
 
 const VALIDATOR_ROLES = ['SUPERVISEUR', 'MANAGER', 'DAF', 'ADMIN_TENANT', 'SUPER_ADMIN'];
@@ -42,6 +43,7 @@ const WORKFLOW_STEPS = [
 ];
 
 export default function PdfWizardPage() {
+  const dialog = useDialog();
   const { hasRole } = useAuth();
   const [rapprochements, setRapprochements] = useState<Rapprochement[]>([]);
   const [selected, setSelected] = useState<Rapprochement | null>(null);
@@ -116,9 +118,8 @@ export default function PdfWizardPage() {
   };
 
   const rejectRapprochement = async (rapp: Rapprochement) => {
-    const motif = window.prompt('Motif du rejet (obligatoire, 5 caractères min.) :');
+    const motif = await dialog.prompt('Motif du rejet :', { title: 'Rejet du rapprochement', minLength: 5, confirmLabel: 'Rejeter', tone: 'danger' });
     if (motif === null) return;
-    if (motif.trim().length < 5) { setMsg({ type: 'error', text: 'Motif trop court (5 caractères minimum)' }); setTimeout(() => setMsg(null), 4000); return; }
     setActing(true);
     try {
       await api.post(`/reconciliation/${rapp.id}/reject`, { motif });

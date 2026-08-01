@@ -3,6 +3,7 @@ import { Check, X, Zap, AlertCircle, RefreshCw, Columns, Undo2, FileCheck2, Scal
 import api from '../../api/axios';
 import { Link } from 'react-router-dom';
 import { apiErrorMessage } from '../../utils/errors';
+import { useDialog } from '../../contexts/DialogContext';
 import type { Compte, ImputationCategorie, AutoMatchSuggestion } from '../../types/api';
 
 // Doit rester cohérent avec MICRO_ECART_SEUIL côté serveur (valeur par défaut si non configurée)
@@ -31,6 +32,7 @@ interface EcritureFormState {
 const EMPTY_ECRITURE_FORM: EcritureFormState = { reference: '', libelle: '', montant: '', type: 'DEBIT', date_ecriture: '', date_valeur: '', piece_ref: '' };
 
 export default function ReconciliationWorkspace() {
+  const dialog = useDialog();
   const [comptes, setComptes] = useState<Compte[]>([]);
   const [selectedCompte, setSelectedCompte] = useState('');
   const [mois, setMois] = useState(String(new Date().getMonth() + 1));
@@ -166,9 +168,8 @@ export default function ReconciliationWorkspace() {
   };
 
   const handleDelettrage = async (ref: string) => {
-    const motif = window.prompt('Motif du dé-lettrage (obligatoire, 5 caractères min.) :');
+    const motif = await dialog.prompt('Motif du dé-lettrage :', { title: 'Dé-lettrage', minLength: 5, confirmLabel: 'Dé-lettrer' });
     if (motif === null) return;
-    if (motif.trim().length < 5) { setMsg({ type: 'error', text: 'Motif trop court (5 caractères minimum)' }); setTimeout(() => setMsg(null), 4000); return; }
     try {
       await api.delete(`/reconciliation/lettrage/${ref}`, { data: { motif } });
       setMsg({ type: 'success', text: 'Dé-lettrage effectué avec succès' });

@@ -2,10 +2,12 @@ import { Fragment, useEffect, useState } from 'react';
 import { Search, Download, RefreshCw, ChevronDown, ChevronRight, ClipboardList, LogIn } from 'lucide-react';
 import api from '../../api/axios';
 import type { AuditLog, LogConnexion } from '../../types/api';
+import { useDialog } from '../../contexts/DialogContext';
 
 type Tab = 'traitement' | 'connexions';
 
 export default function AuditTrailPage() {
+  const dialog = useDialog();
   const [tab, setTab] = useState<Tab>('traitement');
 
   // ── Journal de traitement (piste d'audit CRUD) ─────────────
@@ -42,7 +44,7 @@ export default function AuditTrailPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      alert('Erreur lors de l\'export CSV');
+      await dialog.alert('Erreur lors de l\'export CSV', { tone: 'danger' });
     }
   };
 
@@ -81,7 +83,7 @@ export default function AuditTrailPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
     } catch {
-      alert('Erreur lors de l\'export CSV');
+      await dialog.alert('Erreur lors de l\'export CSV', { tone: 'danger' });
     }
   };
 

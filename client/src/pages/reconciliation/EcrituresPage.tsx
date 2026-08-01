@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { BookText, Plus, Save, X, Edit3, Trash2, Undo2, Download, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
+import { useDialog } from '../../contexts/DialogContext';
 import type { Compte } from '../../types/api';
 
 interface Ecriture {
@@ -39,6 +40,7 @@ const MOIS_LABELS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Jui
 const ETAT_BADGE: Record<string, string> = { BROUILLON: 'badge-gray', VALIDE: 'badge-success', ANNULE: 'badge-danger' };
 
 export default function EcrituresPage() {
+  const dialog = useDialog();
   const [comptes, setComptes] = useState<Compte[]>([]);
   const [ecritures, setEcritures] = useState<Ecriture[]>([]);
   const [loading, setLoading] = useState(true);
@@ -145,8 +147,8 @@ export default function EcrituresPage() {
       catch (err) { return { ok: false, reason: apiErrorMessage(err, 'erreur') }; }
     }
     if (e.etat === 'VALIDE') {
-      const motif = prompt(`Motif d'extourne pour "${e.reference}" (min. 5 caractères) :`);
-      if (!motif || motif.trim().length < 5) return { ok: false, reason: 'extourne annulée' };
+      const motif = await dialog.prompt(`Motif d'extourne pour "${e.reference}" :`, { title: 'Extourne', minLength: 5, confirmLabel: 'Extourner', tone: 'danger' });
+      if (!motif) return { ok: false, reason: 'extourne annulée' };
       try { await api.post(`/ecritures/${e.id}/extourne`, { motif }); return { ok: true }; }
       catch (err) { return { ok: false, reason: apiErrorMessage(err, 'erreur') }; }
     }
@@ -155,7 +157,7 @@ export default function EcrituresPage() {
 
   const handleDeleteOne = async (e: Ecriture) => {
     const label = e.etat === 'VALIDE' ? `Extourner l'écriture "${e.reference}" ?` : `Supprimer l'écriture "${e.reference}" ?`;
-    if (!confirm(label)) return;
+    if (!(await dialog.confirm(label, { tone: 'danger', confirmLabel: e.etat === 'VALIDE' ? 'Extourner' : 'Supprimer' }))) return;
     const r = await deleteOne(e);
     if (r.ok) { load(); setBanner({ type: 'success', text: e.etat === 'VALIDE' ? 'Écriture extournée' : 'Écriture supprimée' }); }
     else if (r.reason !== 'extourne annulée') setBanner({ type: 'error', text: `Action impossible : ${r.reason}` });
@@ -163,7 +165,7 @@ export default function EcrituresPage() {
 
   const handleDeleteSelection = async () => {
     if (selected.size === 0) return;
-    if (!confirm(`Traiter les ${selected.size} écriture(s) sélectionnée(s) (suppression ou extourne selon leur état) ?`)) return;
+    if (!(await dialog.confirm(`Traiter les ${selected.size} écriture(s) sélectionnée(s) (suppression ou extourne selon leur état) ?`, { tone: 'danger', confirmLabel: 'Traiter' }))) return;
     setBulkWorking(true);
     let done = 0, skipped = 0;
     for (const id of selected) {

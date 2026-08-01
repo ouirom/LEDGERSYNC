@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { ThemeProvider } from './contexts/ThemeContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { DialogProvider } from './contexts/DialogContext';
 import AppLayout from './components/layout/AppLayout';
 import LoginPage from './pages/LoginPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
@@ -45,6 +46,7 @@ const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
 function App() {
   return (
     <ThemeProvider>
+      <DialogProvider>
       <AuthProvider>
         <BrowserRouter>
           <Routes>
@@ -89,6 +91,7 @@ function App() {
           </Routes>
         </BrowserRouter>
       </AuthProvider>
+      </DialogProvider>
     </ThemeProvider>
   );
 }
