@@ -84,7 +84,7 @@ export default function ApplicationSettingsPage() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: 22, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Settings2 size={22} color="var(--primary)" /> Paramètres de l'application
+            <Settings2 size={22} color="var(--primary)" /> Paramètres d'Infrastructure
           </h1>
           <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 14 }}>
             Réglages d'infrastructure globaux, modifiables sans intervenir dans le code.

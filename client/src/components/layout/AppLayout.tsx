@@ -17,17 +17,17 @@ const NAV_GROUPS = [
     items: [
       { to: '/dashboard/operational', icon: LayoutDashboard, label: 'Opérationnel' },
       { to: '/dashboard/executive', icon: Briefcase, label: 'Direction' },
-      { to: '/dashboard/audit', icon: Shield, label: 'Audit' },
+      { to: '/dashboard/audit', icon: Shield, label: "Piste d'Audit" },
     ],
   },
   {
     label: 'Rapprochement',
     items: [
-      { to: '/reconciliation/workspace', icon: GitMerge, label: 'Espace de travail' },
+      { to: '/reconciliation/workspace', icon: GitMerge, label: 'Espace de Rapprochement' },
       { to: '/reconciliation/ecritures', icon: BookText, label: 'Écritures' },
-      { to: '/reconciliation/releves', icon: Landmark, label: 'Relevés Bancaires' },
-      { to: '/reconciliation/excel-import', icon: Upload, label: 'Import Excel' },
       { to: '/reconciliation/ecritures-import', icon: FileSpreadsheet, label: 'Import Écritures' },
+      { to: '/reconciliation/releves', icon: Landmark, label: 'Relevés Bancaires' },
+      { to: '/reconciliation/excel-import', icon: Upload, label: 'Import Relevés' },
       { to: '/reconciliation/pdf-wizard', icon: FilePen, label: 'PV & Validation' },
     ],
   },
@@ -42,8 +42,8 @@ const NAV_GROUPS = [
     items: [
       { to: '/settings/periods', icon: Settings, label: 'Périodes' },
       { to: '/settings/themes', icon: Palette, label: 'Thèmes' },
-      { to: '/settings/bank-templates', icon: FileText, label: 'Templates Banque' },
-      { to: '/settings/application', icon: Settings2, label: 'Application', roles: ['SUPER_ADMIN'] },
+      { to: '/settings/bank-templates', icon: FileText, label: "Templates d'Import" },
+      { to: '/settings/application', icon: Settings2, label: 'Infrastructure', roles: ['SUPER_ADMIN'] },
     ],
   },
   {
@@ -59,22 +59,22 @@ const NAV_GROUPS = [
 const SEARCH_INDEX = [
   { label: 'Tableau de Bord Opérationnel', to: '/dashboard/operational', section: 'Dashboard' },
   { label: 'Tableau de Bord Direction', to: '/dashboard/executive', section: 'Dashboard' },
-  { label: 'Piste d\'Audit (Dashboard)', to: '/dashboard/audit', section: 'Dashboard' },
+  { label: 'Piste d\'Audit', to: '/dashboard/audit', section: 'Dashboard' },
   { label: 'Espace de Rapprochement', to: '/reconciliation/workspace', section: 'Rapprochement' },
   { label: 'Écritures Comptables', to: '/reconciliation/ecritures', section: 'Rapprochement' },
+  { label: 'Import d\'Écritures Comptables', to: '/reconciliation/ecritures-import', section: 'Rapprochement' },
   { label: 'Relevés Bancaires', to: '/reconciliation/releves', section: 'Rapprochement' },
-  { label: 'Import Excel / CSV', to: '/reconciliation/excel-import', section: 'Rapprochement' },
-  { label: 'Import Écritures Comptables', to: '/reconciliation/ecritures-import', section: 'Rapprochement' },
+  { label: 'Import de Relevés Bancaires', to: '/reconciliation/excel-import', section: 'Rapprochement' },
   { label: 'Assistant PV & Validation', to: '/reconciliation/pdf-wizard', section: 'Rapprochement' },
   { label: 'Moniteur de Jobs', to: '/jobs/monitor', section: 'Opérations' },
   { label: 'Périodes Comptables', to: '/settings/periods', section: 'Paramètres' },
   { label: 'Thèmes & Personnalisation', to: '/settings/themes', section: 'Paramètres' },
-  { label: 'Templates Import Bancaire', to: '/settings/bank-templates', section: 'Paramètres' },
-  { label: 'Paramètres de l\'application', to: '/settings/application', section: 'Paramètres' },
+  { label: 'Templates d\'Import Bancaire', to: '/settings/bank-templates', section: 'Paramètres' },
+  { label: 'Paramètres d\'Infrastructure', to: '/settings/application', section: 'Paramètres' },
   { label: 'Hiérarchie Organisationnelle', to: '/admin/hierarchy', section: 'Administration' },
   { label: 'Piste d\'Audit', to: '/admin/audit-trail', section: 'Administration' },
   { label: 'Mon Profil', to: '/profile', section: 'Compte' },
-  { label: 'Guide Utilisateur', to: '/help', section: 'Aide' },
+  { label: 'Guide d\'aide', to: '/help', section: 'Aide' },
 ];
 
 export default function AppLayout() {
@@ -215,12 +215,13 @@ export default function AppLayout() {
             </div>
           ))}
 
-          {/* Help link */}
+          {/* Help link — variante Administrateur (sections réservées incluses)
+              pour SUPER_ADMIN/ADMIN_TENANT, sinon le guide utilisateur standard. */}
           <div>
             {!collapsed && <div className="nav-section-label">Aide</div>}
-            <NavLink to="/help" className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={collapsed ? 'Aide' : undefined}>
+            <NavLink to={hasRole('SUPER_ADMIN', 'ADMIN_TENANT') ? '/help/admin' : '/help'} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} title={collapsed ? 'Aide' : undefined}>
               <HelpCircle size={18} style={{ flexShrink: 0 }} />
-              {!collapsed && <span>Guide d'utilisation</span>}
+              {!collapsed && <span>Guide d'aide</span>}
             </NavLink>
           </div>
         </nav>

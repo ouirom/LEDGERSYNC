@@ -121,7 +121,7 @@ export default function ExcelImportPage() {
   return (
     <div style={{ maxWidth: 900, margin: '0 auto' }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Import Relevé Bancaire</h1>
+        <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Import de Relevés Bancaires</h1>
         <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 14 }}>Importer un ou plusieurs fichiers .xlsx, .csv ou .pdf (les pages d'un même relevé). Prévisualisez avant de valider — le traitement s'effectue ensuite en arrière-plan avec suivi temps réel.</p>
       </div>
 
