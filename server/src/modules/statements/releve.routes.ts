@@ -1,4 +1,5 @@
 import { Router, Response } from 'express';
+import { z } from 'zod';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
@@ -6,9 +7,20 @@ import { v4 as uuidv4 } from 'uuid';
 import type { Prisma } from '@prisma/client';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest } from '../../middleware/auth';
+import { createAuditEntry } from '../../middleware/auditLogger';
 import { importQueue } from '../../workers/importWorker';
 import { parseSourceFile, toPreviewLigne } from '../../utils/statementParser';
 import { resolveOrgScope, orgScopeWhere } from '../../utils/orgScope';
+
+const ligneSchema = z.object({
+  compte_bancaire_id: z.number().int().positive(),
+  reference: z.string().optional(),
+  libelle: z.string().min(1),
+  montant: z.number().positive(),
+  type: z.enum(['DEBIT', 'CREDIT']),
+  date_operation: z.string(),
+  date_valeur: z.string().optional(),
+});
 
 const router = Router();
 router.use(authenticate);
@@ -238,6 +250,135 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
   } catch {
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
+});
+
+// GET /api/releves/export — Export CSV (respecte les mêmes filtres que la liste)
+router.get('/export', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { compte_bancaire_id } = req.query;
+  try {
+    const scope = await resolveOrgScope(req.user!);
+    const where: Prisma.ReleveBancaireLigneWhereInput = {
+      compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+      etat: { not: 'ANNULE' },
+    };
+    if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
+
+    const rows = await prisma.releveBancaireLigne.findMany({ where, orderBy: { date_operation: 'asc' } });
+    const csvEscape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['Date opération', 'Date valeur', 'Référence', 'Libellé', 'Débit', 'Crédit', 'Lettrage'];
+    const lines = [header.map(csvEscape).join(';')];
+    for (const r of rows) {
+      lines.push([
+        r.date_operation.toISOString().slice(0, 10),
+        r.date_valeur ? r.date_valeur.toISOString().slice(0, 10) : '',
+        r.reference ?? '',
+        r.libelle,
+        r.type === 'DEBIT' ? r.montant.toString() : '',
+        r.type === 'CREDIT' ? r.montant.toString() : '',
+        r.lettrage_ref ?? '',
+      ].map(csvEscape).join(';'));
+    }
+    const csv = String.fromCharCode(0xfeff) + lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="releve.csv"');
+    res.send(csv);
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// POST /api/releves — Ajout manuel d'une ligne de relevé (ex. correction ou
+// complément d'un import, saisie d'une opération non encore remontée par la banque).
+router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = ligneSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+
+  const scope = await resolveOrgScope(req.user!);
+  const compte = await prisma.compteBancaire.findFirst({
+    where: { id: parsed.data.compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+  });
+  if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
+
+  try {
+    const maxLigne = await prisma.releveBancaireLigne.aggregate({ where: { compte_bancaire_id: compte.id }, _max: { num_ligne: true } });
+    const data = await prisma.releveBancaireLigne.create({
+      data: {
+        compte_bancaire_id: compte.id,
+        reference: parsed.data.reference || null,
+        libelle: parsed.data.libelle,
+        montant: parsed.data.montant,
+        type: parsed.data.type,
+        date_operation: new Date(parsed.data.date_operation),
+        date_valeur: parsed.data.date_valeur ? new Date(parsed.data.date_valeur) : null,
+        num_ligne: (maxLigne._max.num_ligne ?? 0) + 1,
+        etat: 'VALIDE',
+        created_by: req.user!.userId,
+        updated_by: req.user!.userId,
+      },
+    });
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RELEVE_LIGNE', entiteId: data.id, action: 'CREATE', apres: { reference: data.reference, libelle: data.libelle, montant: data.montant.toString(), type: data.type }, ipAddress: req.ip });
+    res.status(201).json({ success: true, data });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// PUT /api/releves/:id — Modifier une ligne de relevé. Réservé aux lignes non
+// lettrées : une ligne déjà lettrée est solidaire d'un rapprochement et ne
+// doit pas être modifiée sans passer par le délettrage.
+router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = ligneSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const id = parseInt(req.params['id'] as string);
+
+  const scope = await resolveOrgScope(req.user!);
+  const existing = await prisma.releveBancaireLigne.findFirst({
+    where: { id, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) } },
+  });
+  if (!existing) { res.status(404).json({ success: false, message: 'Ligne non trouvée' }); return; }
+  if (existing.lettree) { res.status(409).json({ success: false, message: 'Ligne déjà lettrée, impossible de la modifier' }); return; }
+
+  const compte = await prisma.compteBancaire.findFirst({
+    where: { id: parsed.data.compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+  });
+  if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
+
+  try {
+    const data = await prisma.releveBancaireLigne.update({
+      where: { id },
+      data: {
+        compte_bancaire_id: compte.id,
+        reference: parsed.data.reference || null,
+        libelle: parsed.data.libelle,
+        montant: parsed.data.montant,
+        type: parsed.data.type,
+        date_operation: new Date(parsed.data.date_operation),
+        date_valeur: parsed.data.date_valeur ? new Date(parsed.data.date_valeur) : null,
+        updated_by: req.user!.userId,
+      },
+    });
+    await createAuditEntry({
+      tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RELEVE_LIGNE', entiteId: id, action: 'UPDATE',
+      avant: { libelle: existing.libelle, montant: existing.montant.toString(), type: existing.type },
+      apres: { libelle: data.libelle, montant: data.montant.toString(), type: data.type },
+      ipAddress: req.ip,
+    });
+    res.json({ success: true, data });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// DELETE /api/releves/:id — Supprimer une ligne de relevé. Réservé aux lignes
+// non lettrées.
+router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  try {
+    const scope = await resolveOrgScope(req.user!);
+    const existing = await prisma.releveBancaireLigne.findFirst({
+      where: { id, compte_bancaire: { entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) } },
+    });
+    if (!existing) { res.status(404).json({ success: false, message: 'Ligne non trouvée' }); return; }
+    if (existing.lettree) { res.status(409).json({ success: false, message: 'Ligne lettrée, impossible de la supprimer' }); return; }
+
+    await prisma.releveBancaireLigne.delete({ where: { id } });
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'RELEVE_LIGNE', entiteId: id, action: 'DELETE', avant: { libelle: existing.libelle, montant: existing.montant.toString() }, ipAddress: req.ip });
+    res.json({ success: true, message: 'Ligne supprimée' });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 
 export default router;

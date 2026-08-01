@@ -12,6 +12,8 @@ import ExecutiveDashboard from './pages/dashboard/ExecutiveDashboard';
 import ReconciliationWorkspace from './pages/reconciliation/ReconciliationWorkspace';
 import ExcelImportPage from './pages/reconciliation/ExcelImportPage';
 import EcritureImportPage from './pages/reconciliation/EcritureImportPage';
+import EcrituresPage from './pages/reconciliation/EcrituresPage';
+import RelevesPage from './pages/reconciliation/RelevesPage';
 import PdfWizardPage from './pages/reconciliation/PdfWizardPage';
 import JobMonitorPage from './pages/jobs/JobMonitorPage';
 import PeriodsSettingsPage from './pages/settings/PeriodsSettingsPage';
@@ -65,6 +67,8 @@ function App() {
               <Route path="reconciliation/workspace" element={<ReconciliationWorkspace />} />
               <Route path="reconciliation/excel-import" element={<ExcelImportPage />} />
               <Route path="reconciliation/ecritures-import" element={<EcritureImportPage />} />
+              <Route path="reconciliation/ecritures" element={<EcrituresPage />} />
+              <Route path="reconciliation/releves" element={<RelevesPage />} />
               <Route path="reconciliation/pdf-wizard" element={<PdfWizardPage />} />
               {/* Jobs */}
               <Route path="jobs/monitor" element={<JobMonitorPage />} />

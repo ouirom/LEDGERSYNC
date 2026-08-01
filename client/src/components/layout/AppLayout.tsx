@@ -4,7 +4,7 @@ import {
   LayoutDashboard, GitMerge, Upload, Briefcase, Settings,
   Shield, ChevronLeft, ChevronRight, Bell, Moon, Sun,
   User, LogOut, Wifi, WifiOff, FileText, FilePen,
-  HelpCircle, Palette, Building2, Search, X, Command, Settings2, FileSpreadsheet
+  HelpCircle, Palette, Building2, Search, X, Command, Settings2, FileSpreadsheet, BookText, Landmark
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -24,6 +24,8 @@ const NAV_GROUPS = [
     label: 'Rapprochement',
     items: [
       { to: '/reconciliation/workspace', icon: GitMerge, label: 'Espace de travail' },
+      { to: '/reconciliation/ecritures', icon: BookText, label: 'Écritures' },
+      { to: '/reconciliation/releves', icon: Landmark, label: 'Relevés Bancaires' },
       { to: '/reconciliation/excel-import', icon: Upload, label: 'Import Excel' },
       { to: '/reconciliation/ecritures-import', icon: FileSpreadsheet, label: 'Import Écritures' },
       { to: '/reconciliation/pdf-wizard', icon: FilePen, label: 'PV & Validation' },
@@ -59,6 +61,8 @@ const SEARCH_INDEX = [
   { label: 'Tableau de Bord Direction', to: '/dashboard/executive', section: 'Dashboard' },
   { label: 'Piste d\'Audit (Dashboard)', to: '/dashboard/audit', section: 'Dashboard' },
   { label: 'Espace de Rapprochement', to: '/reconciliation/workspace', section: 'Rapprochement' },
+  { label: 'Écritures Comptables', to: '/reconciliation/ecritures', section: 'Rapprochement' },
+  { label: 'Relevés Bancaires', to: '/reconciliation/releves', section: 'Rapprochement' },
   { label: 'Import Excel / CSV', to: '/reconciliation/excel-import', section: 'Rapprochement' },
   { label: 'Import Écritures Comptables', to: '/reconciliation/ecritures-import', section: 'Rapprochement' },
   { label: 'Assistant PV & Validation', to: '/reconciliation/pdf-wizard', section: 'Rapprochement' },

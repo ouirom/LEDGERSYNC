@@ -35,8 +35,9 @@ async function isPeriodeLocked(entrepriseId: number, mois: number, annee: number
 
 // GET /api/ecritures
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
-  const { compte_bancaire_id, mois, annee, lettree, page = '1' } = req.query;
-  const skip = (parseInt(page as string) - 1) * 100;
+  const { compte_bancaire_id, mois, annee, lettree, page = '1', limit = '100' } = req.query;
+  const take = parseInt(limit as string);
+  const skip = (parseInt(page as string) - 1) * take;
   try {
     const scope = await resolveOrgScope(req.user!);
     const where: Prisma.EcritureComptableWhereInput = {
@@ -50,10 +51,48 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     if (lettree !== undefined) where.lettree = lettree === 'true';
 
     const [data, total] = await Promise.all([
-      prisma.ecritureComptable.findMany({ where, skip, take: 100, orderBy: { date_ecriture: 'asc' } }),
+      prisma.ecritureComptable.findMany({ where, skip, take, orderBy: { date_ecriture: 'asc' } }),
       prisma.ecritureComptable.count({ where }),
     ]);
-    res.json({ success: true, data, meta: { total, page: parseInt(page as string) } });
+    res.json({ success: true, data, meta: { total, page: parseInt(page as string), limit: take } });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// GET /api/ecritures/export — Export CSV (respecte les mêmes filtres que la liste)
+router.get('/export', async (req: AuthRequest, res: Response): Promise<void> => {
+  const { compte_bancaire_id, mois, annee, lettree } = req.query;
+  try {
+    const scope = await resolveOrgScope(req.user!);
+    const where: Prisma.EcritureComptableWhereInput = {
+      entreprise: { tenant_id: req.user!.tenantId },
+      etat: { not: 'ANNULE' },
+      ...orgScopeWhere(scope),
+    };
+    if (compte_bancaire_id) where.compte_bancaire_id = parseInt(compte_bancaire_id as string);
+    if (mois) where.periode_mois = parseInt(mois as string);
+    if (annee) where.periode_annee = parseInt(annee as string);
+    if (lettree !== undefined) where.lettree = lettree === 'true';
+
+    const rows = await prisma.ecritureComptable.findMany({ where, orderBy: { date_ecriture: 'asc' } });
+    const csvEscape = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const header = ['Date écriture', 'Date valeur', 'Référence', 'Libellé', 'Débit', 'Crédit', 'Lettrage', 'État'];
+    const lines = [header.map(csvEscape).join(';')];
+    for (const r of rows) {
+      lines.push([
+        r.date_ecriture.toISOString().slice(0, 10),
+        r.date_valeur ? r.date_valeur.toISOString().slice(0, 10) : '',
+        r.reference,
+        r.libelle,
+        r.type === 'DEBIT' ? r.montant.toString() : '',
+        r.type === 'CREDIT' ? r.montant.toString() : '',
+        r.lettrage_ref ?? '',
+        r.etat,
+      ].map(csvEscape).join(';'));
+    }
+    const csv = String.fromCharCode(0xfeff) + lines.join('\r\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="ecritures.csv"');
+    res.send(csv);
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 
@@ -97,6 +136,86 @@ router.post('/', async (req: AuthRequest, res: Response): Promise<void> => {
     });
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ECRITURE_COMPTABLE', entiteId: data.id, action: 'CREATE', apres: { reference: data.reference, libelle: data.libelle, montant: data.montant, type: data.type }, ipAddress: req.ip });
     res.status(201).json({ success: true, data });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// PUT /api/ecritures/:id — Modifier une écriture. Réservé aux écritures en
+// BROUILLON (non encore validées, non lettrées) : une écriture VALIDE doit
+// être extournée puis ressaisie plutôt que modifiée directement, pour ne
+// jamais réécrire silencieusement une pièce déjà comptabilisée.
+router.put('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = ecritureSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const id = parseInt(req.params['id'] as string);
+
+  const scope = await resolveOrgScope(req.user!);
+  const existing = await prisma.ecritureComptable.findFirst({
+    where: { id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+  });
+  if (!existing) { res.status(404).json({ success: false, message: 'Écriture non trouvée' }); return; }
+  if (existing.etat !== 'BROUILLON' || existing.lettree) {
+    res.status(409).json({ success: false, message: 'Seule une écriture en brouillon et non lettrée peut être modifiée — utilisez l\'extourne pour une écriture validée' }); return;
+  }
+  if (!scope.unrestricted && scope.entrepriseId && parsed.data.entreprise_id !== scope.entrepriseId) {
+    res.status(403).json({ success: false, message: 'Entreprise hors de votre périmètre' }); return;
+  }
+
+  let succursale_id: number | null = scope.succursaleId ?? null;
+  let sous_succursale_id: number | null = scope.sousSuccursaleId ?? null;
+  if (parsed.data.compte_bancaire_id) {
+    const compte = await prisma.compteBancaire.findFirst({
+      where: { id: parsed.data.compte_bancaire_id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+    });
+    if (!compte) { res.status(404).json({ success: false, message: 'Compte bancaire non trouvé ou hors de votre périmètre' }); return; }
+    succursale_id = compte.succursale_id;
+    sous_succursale_id = compte.sous_succursale_id;
+  }
+
+  if (await isPeriodeLocked(parsed.data.entreprise_id, parsed.data.periode_mois, parsed.data.periode_annee)) {
+    res.status(423).json({ success: false, message: 'Période verrouillée', code: 'PERIOD_LOCKED' }); return;
+  }
+
+  try {
+    const data = await prisma.ecritureComptable.update({
+      where: { id },
+      data: {
+        ...parsed.data,
+        succursale_id,
+        sous_succursale_id,
+        date_ecriture: new Date(parsed.data.date_ecriture),
+        date_valeur: parsed.data.date_valeur ? new Date(parsed.data.date_valeur) : null,
+        updated_by: req.user!.userId,
+      },
+    });
+    await createAuditEntry({
+      tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ECRITURE_COMPTABLE', entiteId: id, action: 'UPDATE',
+      avant: { reference: existing.reference, libelle: existing.libelle, montant: existing.montant.toString(), type: existing.type },
+      apres: { reference: data.reference, libelle: data.libelle, montant: data.montant.toString(), type: data.type },
+      ipAddress: req.ip,
+    });
+    res.json({ success: true, data });
+  } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// DELETE /api/ecritures/:id — Suppression réelle, réservée aux écritures en
+// BROUILLON. Une écriture VALIDE ne peut pas être supprimée : le client doit
+// utiliser POST /:id/extourne (voir plus bas) pour préserver la piste d'audit.
+router.delete('/:id', async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  try {
+    const scope = await resolveOrgScope(req.user!);
+    const existing = await prisma.ecritureComptable.findFirst({
+      where: { id, entreprise: { tenant_id: req.user!.tenantId }, ...orgScopeWhere(scope) },
+    });
+    if (!existing) { res.status(404).json({ success: false, message: 'Écriture non trouvée' }); return; }
+    if (existing.lettree) { res.status(409).json({ success: false, message: 'Écriture lettrée, impossible de la supprimer' }); return; }
+    if (existing.etat !== 'BROUILLON') {
+      res.status(409).json({ success: false, message: 'Seule une écriture en brouillon peut être supprimée', code: 'USE_EXTOURNE' }); return;
+    }
+
+    await prisma.ecritureComptable.delete({ where: { id } });
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ECRITURE_COMPTABLE', entiteId: id, action: 'DELETE', avant: { reference: existing.reference, libelle: existing.libelle }, ipAddress: req.ip });
+    res.json({ success: true, message: 'Écriture supprimée' });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
 });
 
