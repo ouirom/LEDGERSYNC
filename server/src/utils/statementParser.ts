@@ -99,6 +99,38 @@ function splitTextRowCells(line: string): string[] {
   return bySeparator.map(c => c.trim()).filter(c => c !== '');
 }
 
+// Alias/sous-chaînes reconnus pour la colonne libellé — partagés entre la
+// recherche en lecture (getLibelle) et le repérage en écriture ci-dessous
+// (findLibelleKey, qui doit modifier la même colonne pour y recoller la
+// suite d'un libellé étalé sur plusieurs lignes).
+const LIBELLE_ALIASES = ['libelle', 'libellé', 'description', 'motif', 'intitule', 'intitulé'];
+const LIBELLE_SUBSTRINGS = ['nature', 'libell', 'intitul', 'descript'];
+
+// Retrouve la clé de colonne portant le libellé dans une ligne déjà zippée
+// sur ses en-têtes réels (ex. "Nature de l'opération"), pour pouvoir y
+// concaténer la suite d'une description répartie sur plusieurs lignes.
+function findLibelleKey(row: Record<string, unknown>): string | null {
+  const keys = Object.keys(row);
+  const exact = keys.find(k => LIBELLE_ALIASES.includes(k.toLowerCase()));
+  if (exact) return exact;
+  return keys.find(k => LIBELLE_SUBSTRINGS.some(s => k.toLowerCase().includes(s))) ?? null;
+}
+
+// Une ligne de texte extraite du PDF est-elle la suite (sans date ni montant
+// propre) du libellé de l'opération précédente, plutôt qu'un paragraphe sans
+// rapport (mentions légales, publicité, RIB...) ? Les relevés impriment les
+// compléments d'un libellé (ville/enseigne d'un retrait carte, "DE:"/"MOTIF:"
+// d'un virement, référence d'un prélèvement) tout en majuscules, comme le
+// reste du tableau d'opérations — contrairement au texte explicatif alentour,
+// systématiquement en minuscules/casse mixte. On s'appuie sur ce contraste
+// plutôt que sur la position/mise en page, indisponible en extraction texte.
+function isContinuationText(line: string): boolean {
+  const t = line.trim();
+  if (!t) return false;
+  if (/[a-zà-ÿ]/.test(t)) return false;
+  return /[A-ZÀ-Ÿ0-9]/.test(t);
+}
+
 // Repli texte : la ligne d'en-tête peut n'apparaître que sur la première page
 // (les pages suivantes poursuivent le même tableau sans la répéter) — on la
 // mémorise dès qu'elle est trouvée et on la réutilise pour toutes les pages
@@ -108,7 +140,8 @@ function extractFromText(pages: { text: string }[]): Record<string, unknown>[] {
   let sharedHeaders: string[] | null = null;
   let debitCreditAmbigu = false;
   for (const page of pages) {
-    const lines = page.text.split(/\r?\n/).map(splitTextRowCells).filter(cells => cells.length >= 2);
+    const rawLines = page.text.split(/\r?\n/);
+    const lines = rawLines.map(splitTextRowCells);
     const headerIdx = lines.findIndex(looksLikeHeaderRow);
     if (headerIdx >= 0 && !sharedHeaders) {
       sharedHeaders = lines[headerIdx]!;
@@ -118,12 +151,43 @@ function extractFromText(pages: { text: string }[]): Record<string, unknown>[] {
       debitCreditAmbigu = hasSeparateDebitCreditHeaders(sharedHeaders);
     }
 
+    // Ligne courante rattachée (et sa colonne libellé), pour recoller les
+    // lignes de suite rencontrées juste après — voir isContinuationText.
+    let lastRow: Record<string, unknown> | null = null;
+    let lastLibelleKey: string | null = null;
+
     lines.forEach((cells, i) => {
-      if (i === headerIdx || !cells.some(isDateCell)) return;
-      if (!sharedHeaders) { rows.push(mapPositionalRow(cells)); return; }
-      const row = zipHeaderRow(sharedHeaders, cells);
-      if (debitCreditAmbigu && cells.length < sharedHeaders.length) row['_ambigu'] = true;
-      rows.push(row);
+      if (i === headerIdx) { lastRow = null; lastLibelleKey = null; return; }
+
+      if (cells.length >= 2 && cells.some(isDateCell)) {
+        let row: Record<string, unknown>;
+        let libelleKey: string | null;
+        if (!sharedHeaders) {
+          row = mapPositionalRow(cells);
+          libelleKey = 'libelle';
+        } else {
+          row = zipHeaderRow(sharedHeaders, cells);
+          if (debitCreditAmbigu && cells.length < sharedHeaders.length) row['_ambigu'] = true;
+          libelleKey = findLibelleKey(row);
+        }
+        rows.push(row);
+        lastRow = row;
+        lastLibelleKey = libelleKey;
+        return;
+      }
+
+      const rawLine = (rawLines[i] ?? '').trim().replace(/\s+/g, ' ');
+      if (lastRow && lastLibelleKey && isContinuationText(rawLine)) {
+        const current = String(lastRow[lastLibelleKey] ?? '').trim();
+        lastRow[lastLibelleKey] = current ? `${current} ${rawLine}` : rawLine;
+        return;
+      }
+
+      // Ni une opération, ni la suite d'une opération : on referme le bloc en
+      // cours pour ne pas accrocher par erreur un texte sans rapport à une
+      // prochaine ligne qui ressemblerait, elle, à une suite de libellé.
+      lastRow = null;
+      lastLibelleKey = null;
     });
   }
   return rows;
@@ -203,25 +267,11 @@ export function getCol(row: Record<string, unknown>, ...keys: string[]): unknown
   return '';
 }
 
-// Recherche par sous-chaîne (insensible à la casse) : utile quand l'en-tête
-// réel ne correspond à aucun alias exact, par exemple "Nature de l'opération"
-// (relevés Société Générale et d'autres banques) plutôt que "Libellé".
-function getColContains(row: Record<string, unknown>, ...substrings: string[]): unknown {
-  const keys = Object.keys(row);
-  for (const s of substrings) {
-    const found = keys.find(k => k.toLowerCase().includes(s.toLowerCase()));
-    if (found !== undefined) return row[found];
-  }
-  return '';
-}
-
 // Colonne libellé/description : plusieurs intitulés réels sont utilisés selon
 // les banques ("Libellé", "Description", mais aussi "Nature de l'opération").
 export function getLibelle(row: Record<string, unknown>): string {
-  const exact = getCol(row, 'libelle', 'libellé', 'description', 'motif', 'intitule', 'intitulé');
-  if (exact !== '') return String(exact);
-  const like = getColContains(row, 'nature', 'libell', 'intitul', 'descript');
-  return String(like || 'Sans libellé');
+  const key = findLibelleKey(row);
+  return key ? String(row[key]) : 'Sans libellé';
 }
 
 // read-excel-file convertit nativement les cellules-date Excel en objets Date,
@@ -254,12 +304,21 @@ export interface ParsedMontant {
 // Un relevé bancaire peut exporter soit une seule colonne "Montant" signée
 // (négatif = débit), soit deux colonnes séparées "Débit"/"Crédit" (format le
 // plus courant sur les relevés papier/PDF). On gère les deux formats.
+//
+// Le repli texte PDF associe les cellules aux en-têtes par position (voir
+// zipHeaderRow) : un fragment de texte sans rapport (numéro de référence,
+// de pièce...) peut atterrir dans la colonne Débit/Crédit si l'extraction
+// l'a isolé par une tabulation au milieu du libellé. On exige donc que la
+// cellule ait la forme d'un montant (séparateur décimal + 2 chiffres) avant
+// de l'accepter — sinon on la traite comme absente plutôt que comme un
+// montant aberrant (ex. un numéro de référence à 10 chiffres pris pour un
+// débit de plusieurs milliards).
 export function parseMontantColumns(row: Record<string, unknown>): ParsedMontant {
   const debitRaw = getCol(row, 'debit', 'débit');
   const creditRaw = getCol(row, 'credit', 'crédit');
   if (debitRaw !== '' || creditRaw !== '') {
-    const debit = toNumber(debitRaw);
-    const credit = toNumber(creditRaw);
+    const debit = isAmountCell(String(debitRaw)) ? toNumber(debitRaw) : NaN;
+    const credit = isAmountCell(String(creditRaw)) ? toNumber(creditRaw) : NaN;
     if (!isNaN(debit) && debit > 0) return { montant: debit, type: 'DEBIT' };
     if (!isNaN(credit) && credit > 0) return { montant: credit, type: 'CREDIT' };
   }
