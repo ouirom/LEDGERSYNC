@@ -13,15 +13,16 @@ interface User {
   tenantCode?: string;
   entrepriseId?: number;
   entrepriseNom?: string;
+  entrepriseLogoUrl?: string | null;
   mustChangePassword?: boolean;
   avatarUrl?: string | null;
 }
 
 // Forme renvoyée par GET /auth/me (plus riche que le User stocké en contexte,
-// utilisée seulement pour extraire le thème de l'entreprise/tenant à la connexion)
+// utilisée seulement pour extraire le thème/logo de l'entreprise/tenant à la connexion)
 interface MeResponseUser {
   must_change_password?: boolean;
-  entreprise?: { theme?: Theme | null } | null;
+  entreprise?: { theme?: Theme | null; logo_url?: string | null } | null;
   tenant?: { theme?: Theme | null } | null;
 }
 
@@ -56,7 +57,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       api.get('/auth/me')
         .then(({ data }) => {
-          setUser({ ...data.user, mustChangePassword: data.user.must_change_password, avatarUrl: data.user.avatar_url });
+          setUser({ ...data.user, mustChangePassword: data.user.must_change_password, avatarUrl: data.user.avatar_url, entrepriseLogoUrl: data.user.entreprise?.logo_url });
           applyEntrepriseTheme(data.user);
         })
         .catch(() => { localStorage.clear(); })
@@ -71,7 +72,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.setItem('accessToken', data.accessToken);
     localStorage.setItem('refreshToken', data.refreshToken);
     setUser(data.user);
-    api.get('/auth/me').then(({ data: me }) => applyEntrepriseTheme(me.user)).catch(() => {});
+    api.get('/auth/me').then(({ data: me }) => {
+      applyEntrepriseTheme(me.user);
+      setUser(u => u ? { ...u, entrepriseLogoUrl: me.user.entreprise?.logo_url } : u);
+    }).catch(() => {});
   }, [applyEntrepriseTheme]);
 
   const logout = useCallback(() => {
@@ -90,12 +94,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(u => u ? { ...u, mustChangePassword: false } : u);
   }, []);
 
-  // Recharge nom/prénom/email/avatar depuis le serveur après une modification
-  // du profil (édition, upload/suppression d'avatar) — sans toucher au reste
-  // de l'état (rôle, rattachement...), déjà correct depuis la connexion.
+  // Recharge nom/prénom/email/avatar/logo d'entreprise depuis le serveur après
+  // une modification du profil ou du logo — sans toucher au reste de l'état
+  // (rôle, rattachement...), déjà correct depuis la connexion.
   const refreshUser = useCallback(async () => {
     const { data } = await api.get('/auth/me');
-    setUser(u => u ? { ...u, nom: data.user.nom, prenom: data.user.prenom, email: data.user.email, avatarUrl: data.user.avatar_url } : u);
+    setUser(u => u ? {
+      ...u, nom: data.user.nom, prenom: data.user.prenom, email: data.user.email,
+      avatarUrl: data.user.avatar_url, entrepriseLogoUrl: data.user.entreprise?.logo_url,
+    } : u);
   }, []);
 
   return (

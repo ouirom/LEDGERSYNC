@@ -1,12 +1,31 @@
 import { Router, Response } from 'express';
 import { z } from 'zod';
+import multer from 'multer';
+import path from 'path';
+import { v4 as uuidv4 } from 'uuid';
 import prisma from '../../config/db';
 import { authenticate, authorize, AuthRequest } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { isPrismaError } from '../../utils/errors';
+import { deleteUploadedFile } from '../../utils/uploads';
 
 const router = Router();
 router.use(authenticate);
+
+const logoStorage = multer.diskStorage({
+  destination: process.env.UPLOAD_DIR || './uploads',
+  filename: (_req, file, cb) => cb(null, `logo-${uuidv4()}${path.extname(file.originalname)}`),
+});
+const uploadLogo = multer({
+  storage: logoStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Format non supporté. Utilisez .jpg, .png ou .webp.'));
+  },
+});
 
 const entrepriseCreateSchema = z.object({
   code: z.string().min(1).max(20),
@@ -91,6 +110,58 @@ router.patch('/:id/theme', authorize('SUPER_ADMIN', 'ADMIN_TENANT', 'DAF'), asyn
     await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ENTREPRISE_THEME', entiteId: id, action: 'UPDATE', avant: { theme_id: existing.theme_id }, apres: { theme_id }, ipAddress: req.ip });
     res.json({ success: true, data });
   } catch { res.status(500).json({ success: false, message: 'Erreur interne' }); }
+});
+
+// POST /api/entreprises/:id/logo — Associer un logo à l'entreprise (affiché
+// dans la barre latérale et les documents générés). Même niveau de droits
+// que l'assignation de thème : personnalisation visuelle de l'entreprise.
+router.post('/:id/logo', authorize('SUPER_ADMIN', 'ADMIN_TENANT', 'DAF'), (req: AuthRequest, res: Response) => {
+  uploadLogo.single('logo')(req, res, async (err) => {
+    if (err) { res.status(400).json({ success: false, message: err.message }); return; }
+    if (!req.file) { res.status(400).json({ success: false, message: 'Fichier requis' }); return; }
+
+    const id = parseInt(req.params['id'] as string);
+    try {
+      const existing = await prisma.entreprise.findFirst({ where: { id, tenant_id: req.user!.tenantId } });
+      if (!existing) { res.status(404).json({ success: false, message: 'Entreprise non trouvée' }); return; }
+
+      const logoUrl = `/uploads/${req.file.filename}`;
+      const data = await prisma.entreprise.update({
+        where: { id },
+        data: { logo_url: logoUrl, updated_by: req.user!.userId },
+        include: { theme: true },
+      });
+      deleteUploadedFile(existing.logo_url);
+
+      await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ENTREPRISE', entiteId: id, action: 'UPDATE_LOGO', ipAddress: req.ip });
+      res.json({ success: true, data });
+    } catch (e) {
+      console.error('[ENTREPRISE/UPDATE-LOGO]', e);
+      res.status(500).json({ success: false, message: 'Erreur interne' });
+    }
+  });
+});
+
+// DELETE /api/entreprises/:id/logo
+router.delete('/:id/logo', authorize('SUPER_ADMIN', 'ADMIN_TENANT', 'DAF'), async (req: AuthRequest, res: Response): Promise<void> => {
+  const id = parseInt(req.params['id'] as string);
+  try {
+    const existing = await prisma.entreprise.findFirst({ where: { id, tenant_id: req.user!.tenantId } });
+    if (!existing) { res.status(404).json({ success: false, message: 'Entreprise non trouvée' }); return; }
+    if (!existing.logo_url) { res.json({ success: true, data: existing }); return; }
+
+    deleteUploadedFile(existing.logo_url);
+    const data = await prisma.entreprise.update({
+      where: { id },
+      data: { logo_url: null, updated_by: req.user!.userId },
+      include: { theme: true },
+    });
+    await createAuditEntry({ tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'ENTREPRISE', entiteId: id, action: 'REMOVE_LOGO', ipAddress: req.ip });
+    res.json({ success: true, data });
+  } catch (err) {
+    console.error('[ENTREPRISE/REMOVE-LOGO]', err);
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
 });
 
 export default router;

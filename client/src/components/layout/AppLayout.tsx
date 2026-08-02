@@ -11,7 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSocket } from '../../contexts/SocketContext';
 import api from '../../api/axios';
-import { resolveAvatarUrl } from '../../utils/avatar';
+import { resolveUploadUrl } from '../../utils/uploads';
 import SessionTimeoutGuard from './SessionTimeoutGuard';
 
 const MOIS_COURT = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
@@ -103,7 +103,8 @@ export default function AppLayout() {
   const { connected, socket } = useSocket();
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
-  const avatarSrc = resolveAvatarUrl(user?.avatarUrl);
+  const avatarSrc = resolveUploadUrl(user?.avatarUrl);
+  const entrepriseLogoSrc = resolveUploadUrl(user?.entrepriseLogoUrl);
 
   // Notifications: dérivées à la volée côté serveur (pas de table dédiée) —
   // rafraîchies périodiquement et sur les événements socket déjà émis par le
@@ -227,14 +228,18 @@ export default function AppLayout() {
         <div className="sidebar-logo">
           {!collapsed ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg,#e94560,#0f3460)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: 'white' }}>L</div>
+              <div style={{ width: 32, height: 32, background: entrepriseLogoSrc ? 'white' : 'linear-gradient(135deg,#e94560,#0f3460)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800, color: 'white', overflow: 'hidden', flexShrink: 0 }}>
+                {entrepriseLogoSrc ? <img src={entrepriseLogoSrc} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'L'}
+              </div>
               <div>
                 <div style={{ fontWeight: 700, fontSize: 15, color: 'white', letterSpacing: 0.5 }}>LedgerSync</div>
                 <div style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)', letterSpacing: 1 }}>ERP FINANCIER</div>
               </div>
             </div>
           ) : (
-            <div style={{ width: 32, height: 32, background: 'linear-gradient(135deg,#e94560,#0f3460)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'white' }}>L</div>
+            <div style={{ width: 32, height: 32, background: entrepriseLogoSrc ? 'white' : 'linear-gradient(135deg,#e94560,#0f3460)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, color: 'white', overflow: 'hidden' }}>
+              {entrepriseLogoSrc ? <img src={entrepriseLogoSrc} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} /> : 'L'}
+            </div>
           )}
         </div>
 

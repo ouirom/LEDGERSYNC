@@ -48,6 +48,7 @@ export interface Entreprise {
   theme?: Theme | null;
   pays?: Pays | null;
   succursales?: Succursale[];
+  logo_url?: string | null;
 }
 
 export interface Pays {

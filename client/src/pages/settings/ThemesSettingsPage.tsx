@@ -1,12 +1,17 @@
-import { useEffect, useState } from 'react';
-import { Palette, Sun, Moon, Eye, Sliders, Save, Check } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Palette, Sun, Moon, Eye, Sliders, Save, Check, Image, Upload, Trash2, Loader2 } from 'lucide-react';
 import { useTheme } from '../../contexts/ThemeContext';
+import { useAuth } from '../../contexts/AuthContext';
+import { useDialog } from '../../contexts/DialogContext';
 import api from '../../api/axios';
 import { apiErrorMessage } from '../../utils/errors';
+import { resolveUploadUrl } from '../../utils/uploads';
 import type { Entreprise, Theme as ThemeRow } from '../../types/api';
 
 export default function ThemesSettingsPage() {
   const { isDark, toggleDark, setDark, colors, setColors } = useTheme();
+  const { user, refreshUser } = useAuth();
+  const dialog = useDialog();
   const [entreprises, setEntreprises] = useState<Entreprise[]>([]);
   const [selectedEnt, setSelectedEnt] = useState('');
   const [themes, setThemes] = useState<ThemeRow[]>([]);
@@ -15,7 +20,9 @@ export default function ThemesSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
   const [msg, setMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   const currentEntreprise = entreprises.find(e => String(e.id) === selectedEnt);
 
@@ -82,6 +89,42 @@ export default function ThemesSettingsPage() {
     }
   };
 
+  const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !selectedEnt) return;
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('logo', file);
+      const { data } = await api.post(`/entreprises/${selectedEnt}/logo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      setEntreprises(prev => prev.map(ent => String(ent.id) === selectedEnt ? { ...ent, logo_url: data.data.logo_url } : ent));
+      if (String(user?.entrepriseId) === selectedEnt) void refreshUser();
+      flash('success', 'Logo mis à jour');
+    } catch (err) {
+      flash('error', apiErrorMessage(err, "Erreur lors de l'envoi du logo"));
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
+  const handleLogoRemove = async () => {
+    if (!selectedEnt) return;
+    const ok = await dialog.confirm('Supprimer le logo de cette entreprise ?', { title: 'Supprimer le logo', tone: 'danger', confirmLabel: 'Supprimer' });
+    if (!ok) return;
+    setUploadingLogo(true);
+    try {
+      await api.delete(`/entreprises/${selectedEnt}/logo`);
+      setEntreprises(prev => prev.map(ent => String(ent.id) === selectedEnt ? { ...ent, logo_url: null } : ent));
+      if (String(user?.entrepriseId) === selectedEnt) void refreshUser();
+      flash('success', 'Logo supprimé');
+    } catch (err) {
+      flash('error', apiErrorMessage(err, 'Erreur lors de la suppression du logo'));
+    } finally {
+      setUploadingLogo(false);
+    }
+  };
+
   return (
     <div style={{ maxWidth: 800 }}>
       <div style={{ marginBottom: 24 }}>
@@ -104,6 +147,38 @@ export default function ThemesSettingsPage() {
             Thème actuel : <strong style={{ color: 'var(--text)' }}>{currentEntreprise.theme.nom}</strong>
           </div>
         )}
+      </div>
+
+      {/* Logo entreprise */}
+      <div className="card" style={{ padding: 20, marginBottom: 20 }}>
+        <h3 style={{ margin: '0 0 16px', fontSize: 15, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <Image size={16} color="var(--primary)" /> Logo de l'entreprise
+        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ width: 72, height: 72, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg)', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
+            {uploadingLogo ? (
+              <Loader2 size={22} className="animate-spin" color="var(--text-muted)" />
+            ) : currentEntreprise?.logo_url ? (
+              <img src={resolveUploadUrl(currentEntreprise.logo_url)} alt="Logo" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+            ) : (
+              <Image size={24} color="var(--text-muted)" style={{ opacity: 0.4 }} />
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary" onClick={() => logoInputRef.current?.click()} disabled={uploadingLogo || !selectedEnt} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Upload size={14} /> {currentEntreprise?.logo_url ? 'Remplacer' : 'Importer un logo'}
+              </button>
+              {currentEntreprise?.logo_url && (
+                <button className="btn btn-danger" onClick={handleLogoRemove} disabled={uploadingLogo} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Trash2 size={14} /> Supprimer
+                </button>
+              )}
+            </div>
+            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>JPG, PNG ou WebP, 3 Mo maximum.</span>
+          </div>
+          <input ref={logoInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={handleLogoChange} style={{ display: 'none' }} />
+        </div>
       </div>
 
       {msg && (

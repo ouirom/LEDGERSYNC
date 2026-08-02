@@ -4,13 +4,13 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest, JwtPayload } from '../../middleware/auth';
 import { createAuditEntry } from '../../middleware/auditLogger';
 import { sendPasswordResetEmail, sendPasswordChangedEmail } from '../../utils/mailer';
+import { deleteUploadedFile } from '../../utils/uploads';
 
 const router = Router();
 
@@ -51,15 +51,6 @@ const uploadAvatar = multer({
     else cb(new Error('Format non supporté. Utilisez .jpg, .png ou .webp.'));
   },
 });
-
-// Supprime l'ancien fichier avatar du disque avant remplacement/suppression —
-// n'échoue jamais silencieusement de façon bloquante (le fichier a pu être
-// déjà supprimé manuellement, ou UPLOAD_DIR changé entre-temps).
-function deleteAvatarFile(avatarUrl: string | null) {
-  if (!avatarUrl) return;
-  const filePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(avatarUrl));
-  fs.unlink(filePath, () => {});
-}
 
 // ── Helpers ─────────────────────────────────────────────────
 const generateTokens = (payload: JwtPayload) => {
@@ -331,7 +322,7 @@ router.post('/me/avatar', authenticate, (req: AuthRequest, res: Response) => {
         where: { id: req.user!.userId },
         data: { avatar_url: avatarUrl, updated_by: req.user!.userId },
       });
-      if (before?.avatar_url) deleteAvatarFile(before.avatar_url);
+      if (before?.avatar_url) deleteUploadedFile(before.avatar_url);
 
       await createAuditEntry({
         tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: req.user!.userId,
@@ -351,7 +342,7 @@ router.delete('/me/avatar', authenticate, async (req: AuthRequest, res: Response
   try {
     const before = await prisma.utilisateur.findUnique({ where: { id: req.user!.userId } });
     if (before?.avatar_url) {
-      deleteAvatarFile(before.avatar_url);
+      deleteUploadedFile(before.avatar_url);
       await prisma.utilisateur.update({ where: { id: req.user!.userId }, data: { avatar_url: null, updated_by: req.user!.userId } });
       await createAuditEntry({
         tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: req.user!.userId,

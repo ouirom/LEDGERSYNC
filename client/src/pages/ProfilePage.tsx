@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useDialog } from '../contexts/DialogContext';
 import api from '../api/axios';
-import { resolveAvatarUrl } from '../utils/avatar';
+import { resolveUploadUrl } from '../utils/uploads';
 import { apiErrorMessage } from '../utils/errors';
 import { User, Mail, Shield, Building2, LogOut, Camera, Trash2, Pencil, Loader2 } from 'lucide-react';
 
@@ -66,7 +66,7 @@ export default function ProfilePage() {
     }
   };
 
-  const avatarSrc = resolveAvatarUrl(user?.avatarUrl);
+  const avatarSrc = resolveUploadUrl(user?.avatarUrl);
 
   return (
     <div style={{ maxWidth: 600 }}>
