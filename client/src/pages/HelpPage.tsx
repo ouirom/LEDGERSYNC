@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
   BookOpen, Keyboard, GitMerge, Upload, BarChart2,
   Shield, Clock, ChevronRight, HelpCircle, Zap,
-  FileSpreadsheet, Lock, Users
+  FileSpreadsheet, Lock, Users, FilePen, Bell, User, Palette
 } from 'lucide-react';
 
 const KEYBOARD_SHORTCUTS = [
@@ -56,6 +56,30 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <FilePen size={20} color="#7c3aed" />,
+    title: 'Assistant PV & Validation',
+    color: '#7c3aed',
+    steps: [
+      'Depuis Rapprochement > PV & Validation, filtrez par entreprise, compte, statut, mois et année pour retrouver un rapprochement.',
+      'Chaque rapprochement suit un circuit de validation à double niveau : Brouillon → Soumis → Validé N1 (Superviseur) → Validé N2 (Manager) → Validé Final (DAF) → Clos & PV.',
+      'Séparation des fonctions : la personne qui a créé, soumis ou déjà validé un niveau ne peut pas valider le niveau suivant du même rapprochement.',
+      'Un rapprochement Soumis, Validé N1 ou Validé N2 peut être rejeté avec un motif obligatoire — il repasse alors en Brouillon pour correction.',
+      'Une fois la validation finale (DAF) effectuée, générez le PV officiel au format PDF depuis le panneau de détail.',
+      'Réouverture exceptionnelle : si une erreur est détectée après la validation finale, un DAF ou un administrateur peut rouvrir le rapprochement avec un motif obligatoire — il repasse en Brouillon et doit reparcourir tout le circuit de validation. La personne ayant signé la validation finale ne peut pas rouvrir elle-même le rapprochement.',
+    ],
+  },
+  {
+    icon: <Bell size={20} color="#f97316" />,
+    title: 'Notifications',
+    color: '#f97316',
+    steps: [
+      'La cloche en haut de l\'écran affiche deux types d\'alerte : les validations en attente de votre action, et les écarts non résolus sur des rapprochements pas encore soumis.',
+      'Seules les alertes correspondant à votre rôle et à votre périmètre organisationnel sont affichées.',
+      'Cliquez sur une alerte pour ouvrir directement le rapprochement concerné dans l\'Assistant PV & Validation, ou l\'Espace de Rapprochement pré-rempli sur le bon compte et la bonne période.',
+      'Le badge se met à jour automatiquement en temps réel lorsqu\'un rapprochement change de statut.',
+    ],
+  },
+  {
     icon: <Clock size={20} color="#3b82f6" />,
     title: 'Moniteur de Jobs',
     color: '#3b82f6',
@@ -67,6 +91,17 @@ const SECTIONS = [
     ],
   },
   {
+    icon: <User size={20} color="#14b8a6" />,
+    title: 'Mon Profil',
+    color: '#14b8a6',
+    steps: [
+      'Accédez à votre profil depuis votre avatar en haut à droite, ou depuis le menu en bas de la barre latérale.',
+      'Cliquez "Modifier mes informations" pour changer votre prénom, nom ou email — un email déjà utilisé par un autre compte du tenant est refusé.',
+      'Le rôle et le rattachement organisationnel restent du ressort d\'un administrateur (Administration > Hiérarchie).',
+      'Cliquez l\'icône appareil photo sur votre avatar pour importer une photo de profil (JPG, PNG ou WebP, 3 Mo maximum), ou l\'icône corbeille pour la supprimer.',
+    ],
+  },
+  {
     icon: <Lock size={20} color="#dc2626" />,
     title: 'Sécurité & Session',
     color: '#dc2626',
@@ -75,6 +110,17 @@ const SECTIONS = [
       'Toute action dans l\'application (clic, saisie, navigation) réinitialise ce délai.',
       'Après 5 échecs de connexion consécutifs, le compte est temporairement verrouillé quelques minutes.',
       'Le mot de passe peut être réinitialisé via "Mot de passe oublié" sur l\'écran de connexion, ou par un administrateur (Hiérarchie > Utilisateurs).',
+    ],
+  },
+  {
+    icon: <Palette size={20} color="#ec4899" />,
+    title: 'Thèmes & Personnalisation',
+    color: '#ec4899',
+    steps: [
+      'Accédez à Paramètres > Thèmes, puis sélectionnez l\'entreprise à personnaliser.',
+      'Choisissez un thème prédéfini en un clic, ou personnalisez les couleurs primaire et accent puis enregistrez-les pour l\'entreprise sélectionnée.',
+      'Importez un logo d\'entreprise (JPG, PNG ou WebP, 3 Mo maximum) — il remplace le pictogramme par défaut dans la barre latérale pour les utilisateurs rattachés à cette entreprise.',
+      'Ces actions sont réservées aux rôles Super Admin, Admin Tenant et DAF.',
     ],
   },
   {
