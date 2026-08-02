@@ -11,7 +11,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 import { initSocketIO } from './sockets/socketServer';
-import { authenticate } from './middleware/auth';
+import { authenticateFile } from './middleware/auth';
 import authRoutes from './modules/auth/auth.routes';
 import tenantRoutes from './modules/tenants/tenant.routes';
 import entrepriseRoutes from './modules/tenants/entreprise.routes';
@@ -76,7 +76,7 @@ app.use(limiter);
 // Authentification requise : ces fichiers (PV officiels, relevés importés)
 // contiennent des données financières sensibles et ne doivent jamais être
 // servis à un tiers non authentifié, même avec une URL/nom de fichier deviné.
-app.use('/uploads', authenticate, express.static(path.resolve(uploadDir)));
+app.use('/uploads', authenticateFile, express.static(path.resolve(uploadDir)));
 
 // ── Health Check ────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {

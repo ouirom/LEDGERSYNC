@@ -14,6 +14,7 @@ interface User {
   entrepriseId?: number;
   entrepriseNom?: string;
   mustChangePassword?: boolean;
+  avatarUrl?: string | null;
 }
 
 // Forme renvoyée par GET /auth/me (plus riche que le User stocké en contexte,
@@ -32,6 +33,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   hasRole: (...roles: string[]) => boolean;
   markPasswordChanged: () => void;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -54,7 +56,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (token) {
       api.get('/auth/me')
         .then(({ data }) => {
-          setUser({ ...data.user, mustChangePassword: data.user.must_change_password });
+          setUser({ ...data.user, mustChangePassword: data.user.must_change_password, avatarUrl: data.user.avatar_url });
           applyEntrepriseTheme(data.user);
         })
         .catch(() => { localStorage.clear(); })
@@ -88,8 +90,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setUser(u => u ? { ...u, mustChangePassword: false } : u);
   }, []);
 
+  // Recharge nom/prénom/email/avatar depuis le serveur après une modification
+  // du profil (édition, upload/suppression d'avatar) — sans toucher au reste
+  // de l'état (rôle, rattachement...), déjà correct depuis la connexion.
+  const refreshUser = useCallback(async () => {
+    const { data } = await api.get('/auth/me');
+    setUser(u => u ? { ...u, nom: data.user.nom, prenom: data.user.prenom, email: data.user.email, avatarUrl: data.user.avatar_url } : u);
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, hasRole, markPasswordChanged }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, isAuthenticated: !!user, hasRole, markPasswordChanged, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

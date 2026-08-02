@@ -2,9 +2,14 @@ import { Router, Response } from 'express';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+import { v4 as uuidv4 } from 'uuid';
 import { z } from 'zod';
 import prisma from '../../config/db';
 import { authenticate, AuthRequest, JwtPayload } from '../../middleware/auth';
+import { createAuditEntry } from '../../middleware/auditLogger';
 import { sendPasswordResetEmail, sendPasswordChangedEmail } from '../../utils/mailer';
 
 const router = Router();
@@ -23,8 +28,38 @@ const loginSchema = z.object({
 const forgotPasswordSchema = z.object({ email: z.string().email() });
 const resetPasswordSchema = z.object({ token: z.string().min(1), password: z.string().min(6).max(100) });
 const changePasswordSchema = z.object({ currentPassword: z.string().min(1), newPassword: z.string().min(6).max(100) });
+const updateProfileSchema = z.object({
+  nom: z.string().min(1).max(100),
+  prenom: z.string().min(1).max(100),
+  email: z.string().email(),
+});
 
 const hashResetToken = (token: string) => crypto.createHash('sha256').update(token).digest('hex');
+
+// ── Upload avatar ─────────────────────────────────────────────
+const avatarStorage = multer.diskStorage({
+  destination: process.env.UPLOAD_DIR || './uploads',
+  filename: (_req, file, cb) => cb(null, `avatar-${uuidv4()}${path.extname(file.originalname)}`),
+});
+const uploadAvatar = multer({
+  storage: avatarStorage,
+  limits: { fileSize: 3 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowed.includes(ext)) cb(null, true);
+    else cb(new Error('Format non supporté. Utilisez .jpg, .png ou .webp.'));
+  },
+});
+
+// Supprime l'ancien fichier avatar du disque avant remplacement/suppression —
+// n'échoue jamais silencieusement de façon bloquante (le fichier a pu être
+// déjà supprimé manuellement, ou UPLOAD_DIR changé entre-temps).
+function deleteAvatarFile(avatarUrl: string | null) {
+  if (!avatarUrl) return;
+  const filePath = path.join(process.env.UPLOAD_DIR || './uploads', path.basename(avatarUrl));
+  fs.unlink(filePath, () => {});
+}
 
 // ── Helpers ─────────────────────────────────────────────────
 const generateTokens = (payload: JwtPayload) => {
@@ -161,6 +196,7 @@ router.post('/login', async (req, res): Promise<void> => {
         serviceId: user.service_id,
         serviceNom: user.service?.nom,
         mustChangePassword: user.must_change_password,
+        avatarUrl: user.avatar_url,
       },
     });
   } catch (err) {
@@ -238,6 +274,93 @@ router.get('/me', authenticate, async (req: AuthRequest, res: Response): Promise
     const { password_hash: _, refresh_token: __, ...safeUser } = user;
     res.json({ success: true, user: safeUser });
   } catch {
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── PUT /api/auth/me ────────────────────────────────────────
+// Édition du profil par l'utilisateur connecté lui-même : nom/prénom/email
+// uniquement — rôle et rattachement organisationnel restent du ressort d'un
+// administrateur (voir server/src/modules/users/user.routes.ts).
+router.put('/me', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  const parsed = updateProfileSchema.safeParse(req.body);
+  if (!parsed.success) { res.status(400).json({ success: false, errors: parsed.error.flatten() }); return; }
+  const { nom, prenom, email } = parsed.data;
+
+  try {
+    const before = await prisma.utilisateur.findUnique({ where: { id: req.user!.userId } });
+    if (!before) { res.status(404).json({ success: false, message: 'Utilisateur non trouvé' }); return; }
+
+    const emailTaken = await prisma.utilisateur.findFirst({
+      where: { tenant_id: req.user!.tenantId, email, NOT: { id: req.user!.userId } },
+    });
+    if (emailTaken) { res.status(409).json({ success: false, message: 'Cet email est déjà utilisé par un autre compte' }); return; }
+
+    const updated = await prisma.utilisateur.update({
+      where: { id: req.user!.userId },
+      data: { nom, prenom, email, updated_by: req.user!.userId },
+    });
+
+    await createAuditEntry({
+      tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: updated.id,
+      action: 'UPDATE_PROFILE',
+      avant: { nom: before.nom, prenom: before.prenom, email: before.email },
+      apres: { nom, prenom, email },
+      ipAddress: req.ip,
+    });
+
+    const { password_hash: _, refresh_token: __, ...safeUser } = updated;
+    res.json({ success: true, user: safeUser });
+  } catch (err) {
+    console.error('[AUTH/UPDATE-PROFILE]', err);
+    res.status(500).json({ success: false, message: 'Erreur interne' });
+  }
+});
+
+// ── POST /api/auth/me/avatar ────────────────────────────────
+router.post('/me/avatar', authenticate, (req: AuthRequest, res: Response) => {
+  uploadAvatar.single('avatar')(req, res, async (err) => {
+    if (err) { res.status(400).json({ success: false, message: err.message }); return; }
+    if (!req.file) { res.status(400).json({ success: false, message: 'Fichier requis' }); return; }
+
+    try {
+      const before = await prisma.utilisateur.findUnique({ where: { id: req.user!.userId } });
+      const avatarUrl = `/uploads/${req.file.filename}`;
+
+      await prisma.utilisateur.update({
+        where: { id: req.user!.userId },
+        data: { avatar_url: avatarUrl, updated_by: req.user!.userId },
+      });
+      if (before?.avatar_url) deleteAvatarFile(before.avatar_url);
+
+      await createAuditEntry({
+        tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: req.user!.userId,
+        action: 'UPDATE_AVATAR', ipAddress: req.ip,
+      });
+
+      res.json({ success: true, avatarUrl });
+    } catch (e) {
+      console.error('[AUTH/UPDATE-AVATAR]', e);
+      res.status(500).json({ success: false, message: 'Erreur interne' });
+    }
+  });
+});
+
+// ── DELETE /api/auth/me/avatar ──────────────────────────────
+router.delete('/me/avatar', authenticate, async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const before = await prisma.utilisateur.findUnique({ where: { id: req.user!.userId } });
+    if (before?.avatar_url) {
+      deleteAvatarFile(before.avatar_url);
+      await prisma.utilisateur.update({ where: { id: req.user!.userId }, data: { avatar_url: null, updated_by: req.user!.userId } });
+      await createAuditEntry({
+        tenantId: req.user!.tenantId, userId: req.user!.userId, entite: 'UTILISATEUR', entiteId: req.user!.userId,
+        action: 'REMOVE_AVATAR', ipAddress: req.ip,
+      });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[AUTH/REMOVE-AVATAR]', err);
     res.status(500).json({ success: false, message: 'Erreur interne' });
   }
 });

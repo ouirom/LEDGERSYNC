@@ -11,6 +11,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useSocket } from '../../contexts/SocketContext';
 import api from '../../api/axios';
+import { resolveAvatarUrl } from '../../utils/avatar';
 import SessionTimeoutGuard from './SessionTimeoutGuard';
 
 const MOIS_COURT = ['', 'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
@@ -102,6 +103,7 @@ export default function AppLayout() {
   const { connected, socket } = useSocket();
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
+  const avatarSrc = resolveAvatarUrl(user?.avatarUrl);
 
   // Notifications: dérivées à la volée côté serveur (pas de table dédiée) —
   // rafraîchies périodiquement et sur les événements socket déjà émis par le
@@ -285,8 +287,8 @@ export default function AppLayout() {
         {!collapsed && (
           <div style={{ padding: '12px 16px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-              <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'linear-gradient(135deg,#e94560,#0f3460)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0 }}>
-                {user?.prenom?.[0]}{user?.nom?.[0]}
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarSrc ? undefined : 'linear-gradient(135deg,#e94560,#0f3460)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', flexShrink: 0, overflow: 'hidden' }}>
+                {avatarSrc ? <img src={avatarSrc} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : `${user?.prenom?.[0] || ''}${user?.nom?.[0] || ''}`}
               </div>
               <div style={{ overflow: 'hidden' }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user?.prenom} {user?.nom}</div>
@@ -419,11 +421,11 @@ export default function AppLayout() {
 
           {/* User avatar */}
           <div
-            style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg,#e94560,#0f3460)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', cursor: 'pointer' }}
+            style={{ width: 34, height: 34, borderRadius: '50%', background: avatarSrc ? undefined : 'linear-gradient(135deg,#e94560,#0f3460)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, color: 'white', cursor: 'pointer', overflow: 'hidden' }}
             onClick={() => navigate('/profile')}
             title={`${user?.prenom} ${user?.nom}`}
           >
-            {user?.prenom?.[0]}{user?.nom?.[0]}
+            {avatarSrc ? <img src={avatarSrc} alt="Avatar" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : `${user?.prenom?.[0] || ''}${user?.nom?.[0] || ''}`}
           </div>
         </header>
 

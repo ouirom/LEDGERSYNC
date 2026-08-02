@@ -264,6 +264,7 @@ model Utilisateur {
   email                String          @db.VarChar(255)
   nom                  String          @db.VarChar(100)
   prenom               String          @db.VarChar(100)
+  avatar_url           String?         @db.VarChar(500)
   password_hash        String          @db.VarChar(255)
   role                 RoleUtilisateur @default(USER)
   refresh_token        String?         @db.Text

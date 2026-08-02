@@ -35,6 +35,32 @@ export const authenticate = (req: AuthRequest, res: Response, next: NextFunction
   }
 };
 
+// Variante pour les fichiers statiques (/uploads) : un <img>/<a> chargé
+// directement par le navigateur ne peut pas envoyer d'en-tête Authorization,
+// seul un paramètre d'URL est possible pour authentifier ce type de requête
+// (affichage d'un avatar, ouverture d'un justificatif...). On accepte donc le
+// token soit en en-tête (fetch/axios authentifiés), soit en query string
+// ?token= (chargement direct par le navigateur) — jamais l'un sans l'autre
+// pour le reste de l'API, qui reste strictement basée sur l'en-tête.
+export const authenticateFile = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  const authHeader = req.headers['authorization'];
+  const headerToken = authHeader && authHeader.split(' ')[1];
+  const token = headerToken || (req.query['token'] as string | undefined);
+
+  if (!token) {
+    res.status(401).json({ success: false, message: 'Token d\'accès requis' });
+    return;
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET!) as JwtPayload;
+    req.user = decoded;
+    next();
+  } catch {
+    res.status(401).json({ success: false, message: 'Token invalide ou expiré' });
+  }
+};
+
 export const authorize = (...roles: string[]) => {
   return (req: AuthRequest, res: Response, next: NextFunction): void => {
     if (!req.user) {
